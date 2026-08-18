@@ -112,6 +112,18 @@ header.top .sub { color: var(--text-3); font-size: .8125rem; }
   color: var(--text-2); text-decoration: none; border: 1px solid transparent;
 }
 .range a:hover { background: var(--surface-2); }
+.range .signout { margin: 0; display: flex; }
+.range .signout button {
+  font: inherit;
+  font-size: .8125rem;
+  padding: .3125rem .625rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.range .signout button:hover { background: var(--surface-2); color: var(--text); }
 .range a[aria-current='true'] {
   background: var(--surface); border-color: var(--border-strong); color: var(--text);
   font-weight: 600;
@@ -147,6 +159,11 @@ section.card {
   min-width: 0;
 }
 section.card.wide { grid-column: 1 / -1; }
+section.card.notice {
+  border-color: var(--warning);
+  margin-bottom: 1rem;
+}
+section.card.notice h2 { color: var(--warning); }
 section.card h2 {
   margin: 0 0 .25rem; font-size: .9375rem; font-weight: 650; letter-spacing: -0.01em;
 }

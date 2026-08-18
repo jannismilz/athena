@@ -32,4 +32,6 @@ CRON="${BACKUP_CRON:-0 * * * *}"
 echo "${CRON} /usr/local/bin/backup.sh" > /tmp/crontab
 echo "backup: schedule is '${CRON}'"
 
-exec supercronic -passthrough-logs /tmp/crontab
+# Absolute path matters: as PID 1 supercronic re-executes argv[0] to enable
+# process reaping, and a bare name is not resolved against PATH.
+exec /usr/local/bin/supercronic -passthrough-logs /tmp/crontab

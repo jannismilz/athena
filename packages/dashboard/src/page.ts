@@ -130,8 +130,24 @@ export function renderDashboard(data: DashboardData): string {
             days => html`<a href="?days=${days}" aria-current="${days === data.days ? 'true' : 'false'}"
                             >${days} days</a>`,
           )}
+          <form method="post" action="logout" class="signout">
+            <button type="submit">Sign out</button>
+          </form>
         </nav>
       </header>
+
+      ${
+        content.wikiReady
+          ? null
+          : html`<section class="card wide notice">
+              <h2>Wiki.js has not been set up yet</h2>
+              <p class="note">
+                Open the wiki and complete the setup wizard, then create an API token under
+                Administration, API and put it in <code>WIKI_API_TOKEN</code>. Page and search
+                metrics appear here once that is done. Activity below is already being recorded.
+              </p>
+            </section>`
+      }
 
       <div class="tiles">
         ${tile('Pages', formatCount(content.pages), `${content.areas.length} areas`)}
@@ -194,10 +210,10 @@ export function renderDashboard(data: DashboardData): string {
           <h2>Read versus write</h2>
           <p class="note">How much the AI adds to the wiki, rather than only consulting it.</p>
           ${splitBar([
-            { label: 'Writes', value: activity.writeShare.ai, series: 2 },
+            { label: 'Writes', value: activity.writeCalls, series: 2 },
             {
               label: 'Reads',
-              value: Math.max(0, activity.totalCalls - activity.writeShare.ai),
+              value: Math.max(0, activity.totalCalls - activity.writeCalls),
               series: 1,
             },
           ])}

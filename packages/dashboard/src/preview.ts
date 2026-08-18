@@ -19,6 +19,7 @@ console.log(
     days,
     generatedAt: new Date().toISOString(),
     content: {
+      wikiReady: true,
       pages: 284,
       words: 152_940,
       areas: [
@@ -61,7 +62,7 @@ console.log(
         { label: 'Cursor', value: 284 },
         { label: 'ChatGPT', value: 97 },
       ],
-      writeShare: { ai: 270, human: 0 },
+      writeCalls: 270,
       topQueries: [
         { query: 'dns forwarder', count: 14, lastSeen: ago(3) },
         { query: 'how do I restart the stack', count: 9, lastSeen: ago(20) },

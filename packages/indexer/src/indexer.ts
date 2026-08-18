@@ -65,7 +65,16 @@ export class Indexer {
     const store = new VectorStore(sql)
     const state = new IndexState(config.stateDir)
 
-    const dimensions = await embeddings.getDimensions()
+    // Name the dependency in the error. Bun's fetch failure message alone is
+    // "Was there a typo in the url or port?", which says nothing about which of
+    // the two services is down.
+    const dimensions = await embeddings.getDimensions().catch(error => {
+      throw new Error(
+        `embedding service at ${config.embeddingsUrl} is not answering: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    })
     log.info('embedding model ready', { model: config.embeddingsModel, dimensions })
 
     const previousModel = state.getMeta(MODEL_META_KEY)

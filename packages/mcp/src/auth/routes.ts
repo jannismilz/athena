@@ -1,8 +1,7 @@
 /** The `/login` page that turns MCP_TOKEN into an approved OAuth session. */
 
-import { clientKey } from '@athena/core'
+import { clientKey, escapeHtml, renderLoginPage } from '@athena/core'
 import express, { type Request, type Response, type Router } from 'express'
-import { renderLoginPage } from './login-page.ts'
 import type { AthenaOAuthProvider } from './provider.ts'
 
 /**
@@ -40,8 +39,16 @@ export function loginRouter(provider: AthenaOAuthProvider, instanceName: string)
       res,
       renderLoginPage({
         instanceName,
-        sid,
-        redirectUri: pending?.params.redirectUri ?? null,
+        action: '/login',
+        purpose: 'Approve this AI client so it can read and write your wiki.',
+        hidden: { sid },
+        ...(pending?.params.redirectUri
+          ? {
+              notice: `The client returns to <code>${escapeHtml(
+                String(pending.params.redirectUri),
+              )}</code>.`,
+            }
+          : {}),
         ...(pending
           ? {}
           : { error: 'This login link has expired. Reconnect from your AI client.' }),
@@ -71,7 +78,8 @@ export function loginRouter(provider: AthenaOAuthProvider, instanceName: string)
         res,
         renderLoginPage({
           instanceName,
-          sid: '',
+          action: '/login',
+          purpose: 'Approve this AI client so it can read and write your wiki.',
           error: 'This login link has expired. Reconnect from your AI client.',
         }),
         401,
@@ -87,8 +95,9 @@ export function loginRouter(provider: AthenaOAuthProvider, instanceName: string)
         res,
         renderLoginPage({
           instanceName,
-          sid: linkBurned ? '' : sid,
-          redirectUri: pending?.params.redirectUri ?? null,
+          action: '/login',
+          purpose: 'Approve this AI client so it can read and write your wiki.',
+          ...(linkBurned ? {} : { hidden: { sid } }),
           error: linkBurned
             ? 'Too many failed attempts. Reconnect from your AI client.'
             : 'Wrong password.',

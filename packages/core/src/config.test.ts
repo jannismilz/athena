@@ -28,6 +28,7 @@ describe('loadConfig', () => {
   const valid = {
     WIKI_API_TOKEN: 'token',
     POSTGRES_PASSWORD: 'pw',
+    DASHBOARD_DB_PASSWORD: 'ropw',
     INDEX_INTERVAL_SECONDS: '600',
   }
 

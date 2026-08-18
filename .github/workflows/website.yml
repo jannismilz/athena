@@ -23,11 +23,15 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+        with:
+          # Turn Pages on if it is not already, so a fresh fork does not fail
+          # with "Get Pages site failed" before anything is deployed.
+          enablement: true
       # The site is a single self-contained file, so there is nothing to build.
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: website
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

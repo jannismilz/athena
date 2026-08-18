@@ -1,11 +1,4 @@
-import {
-  connect,
-  createLogger,
-  ensureDatabase,
-  indexerSchema,
-  loadConfig,
-  migrate,
-} from '@athena/core'
+import { bootstrapDatabase, connect, createLogger, indexerSchema, loadConfig } from '@athena/core'
 import { Indexer } from './indexer.ts'
 import { buildApp } from './server.ts'
 
@@ -22,12 +15,14 @@ const dbOptions = {
   database: config.athenaDb,
 }
 
-await ensureDatabase(dbOptions)
-const sql = connect(dbOptions)
+await bootstrapDatabase({
+  db: dbOptions,
+  wikiDatabase: config.postgresDb,
+  readonlyPassword: config.dashboardDbPassword,
+  log,
+})
 
-// Migrations run under an advisory lock, so every service can call this at boot.
-const applied = await migrate(sql)
-if (applied.length) log.info('migrations applied', { applied })
+const sql = connect(dbOptions)
 
 /**
  * Wiki.js, Postgres and the embedding container all start alongside this one, so

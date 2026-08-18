@@ -13,7 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -33,13 +33,46 @@ jobs:
       matrix:
         service: [mcp, indexer, dashboard]
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: build ${{ matrix.service }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.service }}
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  backup-image:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck the backup scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck docker/backup/*.sh
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: docker/backup
+          push: false
+          cache-from: type=gha,scope=backup
+          cache-to: type=gha,mode=max,scope=backup
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the compose file must be valid with only the required secrets set
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci/' .env
+          sed -i 's/^WIKI_API_TOKEN=.*/WIKI_API_TOKEN=ci/' .env
+          sed -i 's/^MCP_TOKEN=.*/MCP_TOKEN=ci/' .env
+          sed -i 's/^DASHBOARD_TOKEN=.*/DASHBOARD_TOKEN=ci/' .env
+          sed -i 's|^MCP_PUBLIC_URL=.*|MCP_PUBLIC_URL=https://athena-mcp.example.com|' .env
+          docker compose config --quiet
+          echo "no container may publish a port"
+          test "$(docker compose config | grep -c published)" -eq 0

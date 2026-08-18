@@ -1,4 +1,4 @@
-import { connect, createLogger, ensureDatabase, loadConfig, mcpSchema, migrate } from '@athena/core'
+import { bootstrapDatabase, connect, createLogger, loadConfig, mcpSchema } from '@athena/core'
 import { buildApp } from './server.ts'
 
 const config = loadConfig(mcpSchema)
@@ -12,12 +12,17 @@ const dbOptions = {
   database: config.athenaDb,
 }
 
-// Every service migrates at boot under an advisory lock, so whichever starts
-// first wins and none can begin writing events into a schema that is not there.
-await ensureDatabase(dbOptions)
+// Every service with admin credentials prepares the database at boot. An
+// advisory lock inside makes that safe to do concurrently, so start order does
+// not matter and no service has to wait for another.
+await bootstrapDatabase({
+  db: dbOptions,
+  wikiDatabase: config.postgresDb,
+  readonlyPassword: config.dashboardDbPassword,
+  log,
+})
+
 const sql = connect(dbOptions)
-const applied = await migrate(sql)
-if (applied.length) log.info('migrations applied', { applied })
 
 const app = await buildApp(config, sql)
 const server = app.listen(config.port, config.host, () => {

@@ -148,15 +148,25 @@ export class WikiClient {
   }
 
   private async request<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    const response = await this.doFetch(this.url, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(variables ? { query, variables } : { query }),
-      signal: AbortSignal.timeout(this.timeoutMs),
-    })
+    let response: Response
+    try {
+      response = await this.doFetch(this.url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(variables ? { query, variables } : { query }),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      })
+    } catch (error) {
+      // A bare fetch failure does not say which host was unreachable.
+      throw new Error(
+        `Wiki.js at ${this.url} is not reachable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => '')

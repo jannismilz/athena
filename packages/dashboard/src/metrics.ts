@@ -26,6 +26,8 @@ export type PageRow = {
 export type QueryRow = { query: string; count: number; lastSeen: string }
 
 export type ContentMetrics = {
+  /** False until the Wiki.js setup wizard has created its schema. */
+  wikiReady: boolean
   pages: number
   words: number
   areas: Bar[]
@@ -38,7 +40,8 @@ export type ActivityMetrics = {
   callsPerDay: SeriesPoint[]
   byTool: Bar[]
   byActor: Bar[]
-  writeShare: { ai: number; human: number }
+  /** Calls that changed the wiki, as opposed to only reading it. */
+  writeCalls: number
   topQueries: QueryRow[]
   zeroResultQueries: QueryRow[]
   failures: Array<{ tool: string; error: string; ts: string }>
@@ -97,11 +100,6 @@ export function relativeAge(iso: string | null): string {
   return `${Math.round(hours / 24)} d ago`
 }
 
-/** Top-level path segment, which is how the wiki is organised. */
-function areaOf(path: string): string {
-  return path.split('/').filter(Boolean)[0] ?? '(root)'
-}
-
 /**
  * Normalise a database timestamp to an ISO string.
  *
@@ -115,54 +113,82 @@ export function toIso(value: unknown): string | null {
   return null
 }
 
+const EMPTY_CONTENT: ContentMetrics = {
+  wikiReady: false,
+  pages: 0,
+  words: 0,
+  areas: [],
+  stale: [],
+  largest: [],
+}
+
+/**
+ * Size and shape of the wiki.
+ *
+ * Every figure is aggregated in Postgres and only the rows actually displayed
+ * come back. The earlier version fetched one row per page and counted words in
+ * JavaScript, which meant reading the full text of the entire wiki on every
+ * dashboard load.
+ */
 export async function contentMetrics(wikiSql: Sql, staleDays: number): Promise<ContentMetrics> {
-  const rows = (
-    (await wikiSql`
-    SELECT path, title, "updatedAt",
-           array_length(regexp_split_to_array(trim(coalesce(content, '')), '\\s+'), 1) AS words
-    FROM pages
-    WHERE "isPublished" = true
-  `) as unknown as Array<{
-      path: string
-      title: string
-      updatedAt: unknown
-      createdAt: unknown
-      words: number | null
-    }>
-  ).map(row => ({
-    ...row,
-    updatedAt: toIso(row.updatedAt),
-  }))
+  const cutoff = new Date(Date.now() - staleDays * DAY_MS).toISOString()
 
-  const areaTotals = new Map<string, number>()
-  let words = 0
-  for (const row of rows) {
-    words += row.words ?? 0
-    const area = areaOf(row.path)
-    areaTotals.set(area, (areaTotals.get(area) ?? 0) + 1)
-  }
+  try {
+    const [totals, areas, stale, largest] = await Promise.all([
+      wikiSql`
+        SELECT count(*)::int AS pages,
+               coalesce(sum(
+                 array_length(regexp_split_to_array(trim(coalesce(content, '')), '\\s+'), 1)
+               ), 0)::bigint AS words
+        FROM pages WHERE "isPublished" = true
+      `,
+      wikiSql`
+        SELECT split_part(path, '/', 1) AS label, count(*)::int AS value
+        FROM pages WHERE "isPublished" = true
+        GROUP BY 1 ORDER BY 2 DESC
+      `,
+      wikiSql`
+        SELECT path, title, "updatedAt"
+        FROM pages
+        WHERE "isPublished" = true AND "updatedAt" < ${cutoff}
+        ORDER BY "updatedAt" ASC
+        LIMIT 10
+      `,
+      wikiSql`
+        SELECT path, title, "updatedAt",
+               array_length(regexp_split_to_array(trim(coalesce(content, '')), '\\s+'), 1) AS words
+        FROM pages WHERE "isPublished" = true
+        ORDER BY length(coalesce(content, '')) DESC
+        LIMIT 10
+      `,
+    ])
 
-  const cutoff = Date.now() - staleDays * DAY_MS
-  const at = (value: string | null) => (value ? Date.parse(value) : 0)
-  const stale = rows
-    .filter(r => r.updatedAt !== null && at(r.updatedAt) < cutoff)
-    .sort((a, b) => at(a.updatedAt) - at(b.updatedAt))
-    .slice(0, 10)
-    .map(r => ({ path: r.path, title: r.title, updatedAt: r.updatedAt }))
+    const row = (totals as unknown as Array<Record<string, unknown>>)[0]
+    const page = (r: Record<string, unknown>): PageRow => ({
+      path: String(r.path ?? ''),
+      title: String(r.title ?? ''),
+      updatedAt: toIso(r.updatedAt),
+    })
 
-  const largest = [...rows]
-    .sort((a, b) => (b.words ?? 0) - (a.words ?? 0))
-    .slice(0, 10)
-    .map(r => ({ path: r.path, title: r.title, updatedAt: r.updatedAt, words: r.words ?? 0 }))
-
-  return {
-    pages: rows.length,
-    words,
-    areas: [...areaTotals.entries()]
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value),
-    stale,
-    largest,
+    return {
+      wikiReady: true,
+      pages: Number(row?.pages ?? 0),
+      words: Number(row?.words ?? 0),
+      areas: (areas as unknown as Array<Record<string, unknown>>).map(r => ({
+        label: String(r.label || '(root)'),
+        value: Number(r.value),
+      })),
+      stale: (stale as unknown as Array<Record<string, unknown>>).map(page),
+      largest: (largest as unknown as Array<Record<string, unknown>>).map(r => ({
+        ...page(r),
+        words: Number(r.words ?? 0),
+      })),
+    }
+  } catch (error) {
+    // 42P01: the table does not exist, so Wiki.js has not run its setup wizard
+    // yet. On a fresh install that is expected, not a fault.
+    if ((error as { code?: string })?.code === '42P01') return EMPTY_CONTENT
+    throw error
   }
 }
 
@@ -229,7 +255,7 @@ export async function activityMetrics(sql: Sql, days: number): Promise<ActivityM
     ),
     byTool: asRows(byTool).map(r => ({ label: String(r.label), value: Number(r.n) })),
     byActor: asRows(byActor).map(r => ({ label: String(r.label), value: Number(r.n) })),
-    writeShare: { ai: writes, human: 0 },
+    writeCalls: writes,
     topQueries: asRows(topQueries).map(r => ({
       query: String(r.query),
       count: Number(r.n),

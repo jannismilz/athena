@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fillGaps, formatCount, relativeAge, toIso } from './metrics.ts'
+import { contentMetrics, fillGaps, formatCount, relativeAge, toIso } from './metrics.ts'
 
 describe('formatCount', () => {
   test('abbreviates large numbers only', () => {
@@ -66,5 +66,28 @@ describe('toIso', () => {
   test('its output is always parseable, which is what callers rely on', () => {
     const iso = toIso(new Date('2026-01-01T00:00:00Z'))!
     expect(Number.isNaN(Date.parse(iso))).toBe(false)
+  })
+})
+
+describe('contentMetrics on a fresh install', () => {
+  // Before the Wiki.js wizard runs, its tables do not exist. That is a normal
+  // state and must not surface as a 500.
+  test('a missing pages table reports not-ready instead of throwing', async () => {
+    const sql = (() => {
+      const err = Object.assign(new Error('relation "pages" does not exist'), { code: '42P01' })
+      return (() => Promise.reject(err)) as unknown as Parameters<typeof contentMetrics>[0]
+    })()
+    const result = await contentMetrics(sql, 180)
+    expect(result.wikiReady).toBe(false)
+    expect(result.pages).toBe(0)
+    expect(result.areas).toEqual([])
+  })
+
+  test('any other database error still propagates', async () => {
+    const sql = (() => {
+      const err = Object.assign(new Error('connection refused'), { code: '08006' })
+      return (() => Promise.reject(err)) as unknown as Parameters<typeof contentMetrics>[0]
+    })()
+    expect(contentMetrics(sql, 180)).rejects.toThrow('connection refused')
   })
 })

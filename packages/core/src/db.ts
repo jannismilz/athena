@@ -32,8 +32,14 @@ export function connect(options: DbOptions): Sql {
 }
 
 /**
- * Connect to the `postgres` maintenance database and create Athena's database
- * if it is missing, so a fresh stack needs no manual setup step.
+ * Create Athena's database if it is missing, so a fresh stack needs no manual
+ * setup step.
+ *
+ * Every service calls this at boot, concurrently. Checking whether the database
+ * exists and then creating it is a race: two services both see it missing and
+ * the loser crashes. CREATE DATABASE cannot be made conditional and cannot run
+ * inside a transaction, so the create is simply attempted and the
+ * already-exists errors are treated as success.
  */
 export async function ensureDatabase(options: DbOptions): Promise<void> {
   const admin = postgres({
@@ -46,11 +52,12 @@ export async function ensureDatabase(options: DbOptions): Promise<void> {
     onnotice: () => {},
   })
   try {
-    const rows = await admin`SELECT 1 FROM pg_database WHERE datname = ${options.database}`
-    if (!rows.length) {
-      // CREATE DATABASE cannot be parameterised or run inside a transaction.
-      await admin.unsafe(`CREATE DATABASE "${options.database.replace(/"/g, '""')}"`)
-    }
+    await admin.unsafe(`CREATE DATABASE "${options.database.replace(/"/g, '""')}"`)
+  } catch (error) {
+    // 42P04: database already exists.
+    // 23505: another service won the same race a moment earlier.
+    const code = (error as { code?: string })?.code
+    if (code !== '42P04' && code !== '23505') throw error
   } finally {
     await admin.end({ timeout: 5 })
   }

@@ -30,7 +30,11 @@ RUN chmod +x /usr/local/bin/backup.sh /usr/local/bin/restore.sh /usr/local/bin/e
 
 # rclone is configured purely from RCLONE_CONFIG_* variables, so point it at an
 # empty config to stop it warning about a missing file on every invocation.
-ENV RCLONE_CONFIG=/dev/null \
+# supercronic forks the job through $SHELL. The Postgres base image leaves it
+# empty, which makes every scheduled run fail with "fork exec: no such file or
+# directory" and the container crash-loop.
+ENV SHELL=/bin/sh \
+    RCLONE_CONFIG=/dev/null \
     BACKUP_WORK_DIR=/tmp/athena-backup \
     BACKUP_STATUS_FILE=/backups/status.json \
     BACKUP_LOCAL_DIR=/backups/archive \

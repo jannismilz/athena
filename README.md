@@ -108,7 +108,7 @@ Then:
 2. In Wiki.js go to **Administration, API**, enable the API, create a token, and
    put it in `.env` as `WIKI_API_TOKEN`.
 3. `docker compose up -d` again to pick up the token.
-4. Open the dashboard at `http://localhost:8082/?token=YOUR_DASHBOARD_TOKEN`.
+4. Open the dashboard and sign in with `DASHBOARD_TOKEN` as the password.
 
 The first start downloads an embedding model of a few hundred MB. The indexer
 retries until it is ready, so the `embeddings` container looking unhealthy for a
@@ -118,15 +118,24 @@ minute or two on first boot is expected.
 
 ## Authentication, explained
 
-There are exactly **four secrets**, and you generate all of them. No credential
+There are exactly **five secrets**, and you generate all of them. No credential
 belonging to Claude, OpenAI or anyone else is ever stored in `.env`.
 
-| Secret | Who uses it | What it protects |
+| Secret | Held by | What it protects |
 |---|---|---|
-| `POSTGRES_PASSWORD` | the services | the database |
+| `POSTGRES_PASSWORD` | postgres, mcp, indexer | full database access |
 | `WIKI_API_TOKEN` | mcp, indexer | the Wiki.js API, created inside Wiki.js |
-| `MCP_TOKEN` | your AI client | the MCP endpoint |
-| `DASHBOARD_TOKEN` | you | the dashboard |
+| `MCP_TOKEN` | mcp | the MCP endpoint your AI connects to |
+| `DASHBOARD_TOKEN` | dashboard | the dashboard sign-in |
+| `DASHBOARD_DB_PASSWORD` | dashboard, mcp, indexer | a SELECT-only database role |
+
+Each container gets only what it needs. The dashboard receives neither
+`POSTGRES_PASSWORD` nor `WIKI_API_TOKEN`, so compromising it yields read access
+to the wiki and nothing else. You can check that at any time:
+
+```bash
+docker inspect athena-dashboard -f '{{range .Config.Env}}{{println .}}{{end}}' | grep -iE 'PASSWORD|TOKEN'
+```
 
 ### Why there is an OAuth server, and what it does not do
 
@@ -163,7 +172,8 @@ ignore the whole mechanism; the bearer path does not touch it.
   why.
 - The login page throttles after 5 wrong passwords per address, and burns a
   login link after 3 attempts.
-- The dashboard throttles the same way. It is read-only and never writes.
+- The dashboard throttles the same way, and its session cookie is signed,
+  `HttpOnly` and `SameSite=Strict`. Cross-site form posts are refused.
 - Secret comparisons are constant time, so a token cannot be guessed one
   character at a time.
 - Both services trust proxy headers only from loopback, so a remote client
@@ -360,12 +370,11 @@ sudo ss -tlnp | grep -E '3000|8080|8081|8082|5432'
 A separate service on port 8082, not part of the public site. It answers what a
 page count cannot: what the AI actually did, and what your wiki is missing.
 
-```
-https://wiki.example.com/dashboard/?token=YOUR_DASHBOARD_TOKEN
-```
+Open `https://wiki.example.com/dashboard/` and sign in with `DASHBOARD_TOKEN`
+as the password. The token is never put in a URL: sign-in is a form, and the
+session is a signed cookie that does not contain the token.
 
-The token is exchanged for a cookie by an immediate redirect, so it appears in
-the URL only once. Prefer a bearer header for scripts:
+For scripts, use a bearer header:
 
 ```bash
 curl -H "Authorization: Bearer $DASHBOARD_TOKEN" \
@@ -383,7 +392,17 @@ What it shows:
 - **Index health**: chunks stored, pages indexed, how far behind the index is.
 - **Backup**: when the last run finished, how big it was, and where it went.
 
-It is read-only and never writes to the wiki.
+It is read-only in two senses: it never writes, and it connects to Postgres as
+`athena_readonly`, a role holding SELECT and nothing else, so a mistake in a
+metrics query cannot alter the wiki. The role is created automatically during
+database bootstrap by whichever service with admin credentials starts first, so
+there is no ordering requirement and nothing to run by hand.
+
+Figures are cached for `METRICS_CACHE_SECONDS`, and every total is aggregated in
+Postgres rather than by reading every page, so a refresh costs almost nothing.
+
+Sessions last 30 days and are invalidated by changing `DASHBOARD_TOKEN`. Sign
+out with the button in the header.
 
 ---
 
@@ -576,7 +595,9 @@ immediately instead of at three in the morning.
 | `WIKI_PUBLIC_URL` | `http://localhost:3000` | Used for dashboard links |
 | `MCP_TOKEN` | required | Bearer token and browser login password |
 | `MCP_PUBLIC_URL` | required | Bare https origin, no path |
-| `DASHBOARD_TOKEN` | required | Protects the dashboard |
+| `DASHBOARD_TOKEN` | required | The dashboard sign-in password |
+| `DASHBOARD_DB_PASSWORD` | required | Password for the SELECT-only database role |
+| `METRICS_CACHE_SECONDS` | `60` | How long dashboard figures are reused |
 | `EMBEDDINGS_MODEL` | `intfloat/multilingual-e5-small` | Changing it re-indexes everything |
 | `EMBEDDINGS_PROVIDER` | `tei` | `tei`, or `openai` for a compatible endpoint |
 | `INDEX_INTERVAL_SECONDS` | `300` | Full reconciliation interval |

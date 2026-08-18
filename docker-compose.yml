@@ -3,10 +3,12 @@
 #   cp .env.example .env   # fill in every CHANGE_ME
 #   docker compose up -d
 #
-# Data lives under ${ATHENA_DATA_DIR} (./data by default) as bind mounts, so
-# it is visible on the host and trivially backed up. Only Wiki.js, the MCP
-# server and the dashboard bind a port, and all three bind to localhost only,
-# put a reverse proxy with TLS in front of them.
+# No container publishes a port. Everything is reachable only from inside the
+# `athena` network, which a reverse proxy joins to serve it. See the README for
+# which services need to be reachable and on which port.
+#
+# Data lives under ${ATHENA_DATA_DIR} (./data by default) as bind mounts, so it
+# is visible on the host and covered by the backup container.
 
 name: athena
 
@@ -31,6 +33,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-athena}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-wiki}
+      # Postgres 18 refuses to start when the bind mount is itself the data
+      # directory, even an empty one. Pointing PGDATA at a subdirectory keeps
+      # the familiar mount path and satisfies the image.
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ${ATHENA_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -42,9 +48,14 @@ services:
 
   # Text Embeddings Inference. Runs the model out of process so the indexer
   # stays small and the model can be swapped here without a rebuild.
+  #
+  # This image is published for linux/amd64 only. On an arm64 host it runs under
+  # emulation, which is too slow to be useful, so use an OpenAI-compatible
+  # endpoint instead and set EMBEDDINGS_PROVIDER=openai. See the README.
   embeddings:
     <<: *common
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2.1
+    platform: linux/amd64
     container_name: athena-embeddings
     command: ['--model-id', '${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}', '--port', '80']
     volumes:
@@ -76,8 +87,6 @@ services:
       - ${ATHENA_DATA_DIR:-./data}/wikijs/config:/wiki/config
       - ${ATHENA_DATA_DIR:-./data}/wikijs/data:/wiki/data
       - ${ATHENA_DATA_DIR:-./data}/wikijs/uploads:/wiki/data/uploads
-    ports:
-      - '127.0.0.1:3000:3000'
     networks: [athena]
 
   indexer:
@@ -104,7 +113,11 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${POSTGRES_USER:-athena}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiki}
       ATHENA_DB: ${ATHENA_DB:-athena}
+      # Provisions the dashboard's read-only role. This service can write, so it
+      # is one of the places that can create it.
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?DASHBOARD_DB_PASSWORD is required}
       PORT: '8081'
     volumes:
       - ${ATHENA_DATA_DIR:-./data}/indexer:/app/state
@@ -140,12 +153,12 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${POSTGRES_USER:-athena}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiki}
       ATHENA_DB: ${ATHENA_DB:-athena}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?DASHBOARD_DB_PASSWORD is required}
       PORT: '8080'
     volumes:
       - ${ATHENA_DATA_DIR:-./data}/mcp:/app/state
-    ports:
-      - '127.0.0.1:8080:8080'
     healthcheck:
       test: ['CMD', 'bun', '-e', 'await fetch("http://127.0.0.1:8080/health")']
       interval: 15s
@@ -168,22 +181,22 @@ services:
         condition: service_started
     environment:
       <<: *common-env
+      # Only a link target: the dashboard never calls the Wiki.js API.
       WIKI_URL: ${WIKI_PUBLIC_URL:-http://localhost:3000}
-      WIKI_API_TOKEN: ${WIKI_API_TOKEN}
       INDEXER_URL: http://indexer:8081
       DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?DASHBOARD_TOKEN is required}
       POSTGRES_HOST: postgres
-      POSTGRES_USER: ${POSTGRES_USER:-athena}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-wiki}
       ATHENA_DB: ${ATHENA_DB:-athena}
+      # This container deliberately receives no admin credentials. It logs in as
+      # a role that holds SELECT and nothing else.
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?DASHBOARD_DB_PASSWORD is required}
+      METRICS_CACHE_SECONDS: ${METRICS_CACHE_SECONDS:-60}
       BACKUP_STATUS_PATH: /app/backups/status.json
       PORT: '8082'
     volumes:
       # Read-only: the dashboard reports on backups, it never writes them.
       - ${ATHENA_DATA_DIR:-./data}/backups:/app/backups:ro
-    ports:
-      - '127.0.0.1:8082:8082'
     healthcheck:
       test: ['CMD', 'bun', '-e', 'await fetch("http://127.0.0.1:8082/health")']
       interval: 15s
@@ -236,5 +249,7 @@ services:
     networks: [athena]
 
 networks:
+  # Named so a reverse proxy container defined in another compose file can join
+  # it with `networks: [athena]` plus `external: true`.
   athena:
     name: athena

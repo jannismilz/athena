@@ -58,12 +58,18 @@ const wiki = {
   wikiLocale: z.string().default('en'),
 }
 
-const postgres = {
+/** Where the database is. Needed by everything, secret to nothing. */
+const postgresLocation = {
   postgresHost: z.string().default('postgres'),
   postgresPort: z.coerce.number().int().positive().default(5432),
+  postgresDb: z.string().default('wiki'),
+  athenaDb: z.string().default('athena'),
+}
+
+/** Credentials that can write. Only services that need to write receive these. */
+const postgresAdmin = {
   postgresUser: z.string().default('athena'),
   postgresPassword: secret('POSTGRES_PASSWORD'),
-  athenaDb: z.string().default('athena'),
 }
 
 const embeddings = {
@@ -78,7 +84,9 @@ const embeddings = {
 export const mcpSchema = z.object({
   ...base,
   ...wiki,
-  ...postgres,
+  ...postgresLocation,
+  ...postgresAdmin,
+  dashboardDbPassword: secret('DASHBOARD_DB_PASSWORD'),
   mcpToken: secret('MCP_TOKEN'),
   mcpPublicUrl: httpsOrigin,
   indexerUrl: z.string().url().default('http://indexer:8081'),
@@ -90,7 +98,9 @@ export const mcpSchema = z.object({
 export const indexerSchema = z.object({
   ...base,
   ...wiki,
-  ...postgres,
+  ...postgresLocation,
+  ...postgresAdmin,
+  dashboardDbPassword: secret('DASHBOARD_DB_PASSWORD'),
   ...embeddings,
   stateDir: z.string().default('/app/state'),
   indexIntervalSeconds: z.coerce.number().int().nonnegative().default(300),
@@ -101,10 +111,13 @@ export const indexerSchema = z.object({
 
 export const dashboardSchema = z.object({
   ...base,
-  ...wiki,
-  ...postgres,
+  ...postgresLocation,
+  // Only a link target, so the dashboard can point at pages.
+  wikiUrl: z.string().url().default('http://wikijs:3000'),
   dashboardToken: secret('DASHBOARD_TOKEN'),
+  dashboardDbPassword: secret('DASHBOARD_DB_PASSWORD'),
   backupStatusPath: z.string().default('/app/backups/status.json'),
+  metricsCacheSeconds: z.coerce.number().int().nonnegative().default(60),
   indexerUrl: z.string().url().default('http://indexer:8081'),
   host: z.string().default('0.0.0.0'),
   port: z.coerce.number().int().positive().default(8082),
