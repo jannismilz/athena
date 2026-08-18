@@ -27,7 +27,6 @@ services:
     # Changing it on an existing data directory needs a dump and restore, not
     # just a new tag.
     image: pgvector/pgvector:pg18
-    container_name: athena-postgres
     environment:
       <<: *common-env
       POSTGRES_USER: ${POSTGRES_USER:-athena}
@@ -56,7 +55,6 @@ services:
     <<: *common
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2.1
     platform: linux/amd64
-    container_name: athena-embeddings
     command: ['--model-id', '${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}', '--port', '80']
     volumes:
       - ${ATHENA_DATA_DIR:-./data}/embeddings:/data
@@ -71,7 +69,6 @@ services:
   wikijs:
     <<: *common
     image: ghcr.io/requarks/wiki:2
-    container_name: athena-wikijs
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,7 +84,7 @@ services:
       - ${ATHENA_DATA_DIR:-./data}/wikijs/config:/wiki/config
       - ${ATHENA_DATA_DIR:-./data}/wikijs/data:/wiki/data
       - ${ATHENA_DATA_DIR:-./data}/wikijs/uploads:/wiki/data/uploads
-    networks: [athena]
+    networks: [athena, edge]
 
   indexer:
     <<: *common
@@ -95,7 +92,6 @@ services:
       context: .
       target: indexer
     image: athena-indexer
-    container_name: athena-indexer
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,7 +131,6 @@ services:
       context: .
       target: mcp
     image: athena-mcp
-    container_name: athena-mcp
     depends_on:
       postgres:
         condition: service_healthy
@@ -165,7 +160,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    networks: [athena]
+    networks: [athena, edge]
 
   dashboard:
     <<: *common
@@ -173,7 +168,6 @@ services:
       context: .
       target: dashboard
     image: athena-dashboard
-    container_name: athena-dashboard
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,7 +197,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    networks: [athena]
+    networks: [athena, edge]
 
   # Hourly pg_dump, verified, then pushed to any rclone destination.
   # One dump is a complete backup: Wiki.js keeps pages, users, settings and
@@ -214,7 +208,6 @@ services:
     build:
       context: ./docker/backup
     image: athena-backup
-    container_name: athena-backup
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,7 +242,16 @@ services:
     networks: [athena]
 
 networks:
-  # Named so a reverse proxy container defined in another compose file can join
-  # it with `networks: [athena]` plus `external: true`.
+  # Internal. Postgres, the embedding model and the indexer are only ever
+  # reachable from here, so a compromised proxy cannot talk to the database.
   athena:
-    name: athena
+
+  # The edge. Only Wiki.js, the MCP server and the dashboard join this, and it
+  # is what a reverse proxy attaches to.
+  #
+  # On a platform that supplies its own proxy network, point this at it:
+  #   ATHENA_EDGE_NETWORK=dokploy-network
+  #   ATHENA_EDGE_EXTERNAL=true
+  edge:
+    name: ${ATHENA_EDGE_NETWORK:-athena-edge}
+    external: ${ATHENA_EDGE_EXTERNAL:-false}

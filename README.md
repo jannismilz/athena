@@ -50,6 +50,10 @@ Then:
 3. `docker compose up -d` again to pick it up.
 4. Open the dashboard and sign in with `DASHBOARD_TOKEN`.
 
+Data is written to a `data/` directory **next to** the checkout, not inside it,
+so no git operation can ever delete it. Change `ATHENA_DATA_DIR` if you want it
+elsewhere.
+
 Nothing publishes a port, so reach the services through your reverse proxy, or
 add a temporary `ports:` mapping while trying it out.
 
@@ -186,10 +190,13 @@ with different lifecycles:
              uploads, backups
 ```
 
-**Do not put the data inside the repository.** `data/` is in `.gitignore`, and
-`git clean -xdf` deletes ignored files, so one routine command wipes your
-database with no confirmation and no undo. Keeping them as siblings makes that
-impossible.
+They are siblings, not nested, and that is the whole point. `data/` is in
+`.gitignore`, and `git clean -xdf` deletes ignored files, so data inside the
+checkout is one routine command away from being wiped with no confirmation and
+no undo. A sibling directory cannot be reached by any git operation.
+
+The default `ATHENA_DATA_DIR=../data` gives you this layout automatically, so
+there is nothing to remember.
 
 ```bash
 sudo mkdir -p /athena && sudo chown athena:athena /athena
@@ -200,10 +207,11 @@ cp .env.example .env
 chmod 600 .env        # it holds every secret
 ```
 
-Set at minimum:
+`ATHENA_DATA_DIR` defaults to `../data`, which resolves against the directory
+holding the compose file. Clone into `/athena/app` as above and the data lands
+in `/athena/data` with nothing to configure. Set the secrets:
 
 ```bash
-ATHENA_DATA_DIR=/athena/data
 POSTGRES_PASSWORD=...
 MCP_TOKEN=...
 DASHBOARD_TOKEN=...
@@ -240,8 +248,14 @@ above is simpler on a machine that does one job, and either works: only
 
 ### 4. Reverse proxy
 
-No container publishes a port. Everything lives on the `athena` Docker network,
-which your proxy joins. Route these:
+No container publishes a port. Services sit on two networks:
+
+- **`athena`**, internal. Postgres, the embedding model and the indexer live
+  here only, so a compromised proxy cannot reach the database.
+- **`athena-edge`**, which your reverse proxy joins. Only the three services
+  below are on it.
+
+Route these:
 
 | Host | To | Notes |
 |---|---|---|
@@ -255,8 +269,10 @@ attempt looks like it came from the proxy.
 <details>
 <summary><b>Worked nginx example</b></summary>
 
-Run nginx as a container joined to the `athena` network, as below, or on the
-host with a `ports:` mapping bound to `127.0.0.1`.
+Run nginx as a container joined to the `athena-edge` network, as below, or on
+the host with a `ports:` mapping bound to `127.0.0.1`. Joining the edge network
+means the proxy can reach Wiki.js, the MCP server and the dashboard, and
+nothing else.
 
 ```nginx
 server {
@@ -307,6 +323,41 @@ server {
 ```
 
 Then issue certificates with certbot, or terminate TLS wherever you already do.
+
+</details>
+
+<details>
+<summary><b>Deploying with Dokploy, CapRover or another PaaS</b></summary>
+
+Nothing here is specific to a platform. A PaaS that runs Compose and supplies
+its own proxy needs three settings, all in `.env`:
+
+```bash
+ATHENA_DATA_DIR=../files          # Dokploy's persistent directory
+ATHENA_EDGE_NETWORK=dokploy-network
+ATHENA_EDGE_EXTERNAL=true
+```
+
+`ATHENA_DATA_DIR` matters most: Dokploy cleans up absolute bind-mount paths on
+redeploy, so an absolute path there would destroy the database. A path relative
+to the app directory survives.
+
+Then add domains in the platform UI, pointing at the service and its port:
+
+| Domain | Service | Port |
+|---|---|---|
+| `wiki.example.com` | `wikijs` | 3000 |
+| `athena-mcp.example.com` | `mcp` | 8080 |
+| `wiki.example.com/dashboard` | `dashboard` | 8082 |
+
+The platform generates its own routing labels and handles TLS, so skip the
+nginx section entirely. Everything else, including the compose file, is
+unchanged.
+
+You do not need to publish images to a registry: Dokploy builds from the
+repository. Building four images does compete with Postgres and the embedding
+model for memory, so on a small host you may prefer to build in CI and pull
+instead.
 
 </details>
 
@@ -446,8 +497,10 @@ covers everything.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `ATHENA_DATA_DIR` | `./data` | Root of every bind mount |
+| `ATHENA_DATA_DIR` | `../data` | Root of every bind mount, a sibling of the checkout |
 | `ATHENA_INSTANCE_NAME` | `Athena` | Shown on the login page and dashboard |
+| `ATHENA_EDGE_NETWORK` | `athena-edge` | Network your reverse proxy joins |
+| `ATHENA_EDGE_EXTERNAL` | `false` | `true` when the platform supplies that network |
 | `ATHENA_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TZ` | `UTC` | Provenance stamps and dated paths |
 | `POSTGRES_DB` | `wiki` | The Wiki.js database |
@@ -477,7 +530,7 @@ Each container receives only the credentials it uses. The dashboard gets neither
 and nothing more. Check at any time:
 
 ```bash
-docker inspect athena-dashboard -f '{{range .Config.Env}}{{println .}}{{end}}' | grep -iE 'PASSWORD|TOKEN'
+docker compose exec dashboard env | grep -iE 'PASSWORD|TOKEN'
 ```
 
 - Unauthenticated MCP requests get 401 and no explanation.
