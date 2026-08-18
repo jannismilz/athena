@@ -20,9 +20,11 @@ x-common: &common
 services:
   postgres:
     <<: *common
-    # Postgres with pgvector. The major version must match the client in the
-    # backup image, or pg_dump emits parameters the server cannot read.
-    image: pgvector/pgvector:pg17
+    # Postgres with pgvector. Keep this major version in step with the base
+    # image of docker/backup/Dockerfile, which provides the dump client.
+    # Changing it on an existing data directory needs a dump and restore, not
+    # just a new tag.
+    image: pgvector/pgvector:pg18
     container_name: athena-postgres
     environment:
       <<: *common-env

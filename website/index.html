@@ -457,6 +457,136 @@ p code, td code, li code {
 .steps h3 { margin-bottom: 0.15rem; }
 .steps p { margin: 0; color: var(--ink-2); font-size: var(--step--1); }
 
+
+/* --- Worked examples ------------------------------------------------------ */
+.uses { display: grid; gap: 0.75rem; margin-top: 1.75rem; }
+.use {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1rem 1.15rem 1.1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+.use-said { font-size: var(--step--1); line-height: 1.55; color: var(--ink); margin: 0; max-width: none; }
+.use-said::before {
+  content: "You";
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.2rem;
+}
+.use-did {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.55rem;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-2);
+  border-top: 1px solid var(--rule);
+  padding-top: 0.6rem;
+}
+.use-did .tool {
+  color: var(--accent-ink);
+  background: var(--accent-wash);
+  border-radius: 3px;
+  padding: 0.05em 0.4em;
+  white-space: nowrap;
+}
+.use-did .path { color: var(--ink); word-break: break-all; }
+.use-did .arrow { color: var(--ink-3); }
+
+/* --- Dashboard preview ---------------------------------------------------- */
+.mock {
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  background: var(--paper);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-top: 1.75rem;
+}
+.mock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--raised);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+.mock-bar strong { font-weight: 600; letter-spacing: 0.05em; }
+.mock-bar .pills { display: flex; gap: 0.3rem; color: var(--ink-3); }
+.mock-bar .pills span { padding: 0.1rem 0.45rem; border-radius: 999px; }
+.mock-bar .pills .on { background: var(--sunken); color: var(--ink); border: 1px solid var(--rule-firm); }
+.mock-body { padding: 0.9rem; display: grid; gap: 0.75rem; }
+.mock-tiles { display: grid; gap: 0.5rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 40rem) { .mock-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.mock-tile {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.6rem 0.7rem;
+}
+.mock-tile .k {
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.mock-tile .v {
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.mock-tile .s { font-size: 0.6875rem; color: var(--ink-2); }
+.mock-tile.ok .v { color: var(--accent-ink); }
+.mock-panels { display: grid; gap: 0.75rem; }
+@media (min-width: 44rem) { .mock-panels { grid-template-columns: 1fr 1fr; } }
+.mock-panel {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.7rem 0.8rem 0.8rem;
+  min-width: 0;
+}
+.mock-panel h4 {
+  margin: 0 0 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.mock-rows { display: grid; gap: 0.35rem; }
+.mock-row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr) 2.2rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-2);
+}
+.mock-row .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mock-row .track { background: var(--sunken); border-radius: 2px; height: 9px; display: block; }
+.mock-row .fill { background: var(--accent); border-radius: 2px; height: 9px; display: block; }
+.mock-row .num { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+.mock-q { display: grid; gap: 0.4rem; font-family: var(--mono); font-size: 0.6875rem; }
+.mock-q div { display: flex; justify-content: space-between; gap: 0.75rem; color: var(--ink-2); }
+.mock-q div span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mock-q div span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+
 /* --- Footer --------------------------------------------------------------- */
 .colophon {
   border-top: 1px solid var(--rule);
@@ -490,8 +620,9 @@ p code, td code, li code {
       Athena
     </a>
     <nav>
+      <a href="#uses">In use</a>
       <a href="#mechanism">Mechanism</a>
-      <a href="#tools">Tools</a>
+      <a href="#dashboard">Dashboard</a>
       <a href="#install">Install</a>
       <a href="https://github.com/jannismilz/athena">Source</a>
     </nav>
@@ -506,8 +637,10 @@ p code, td code, li code {
     <ol>
       <li><a href="#top">athena</a></li>
       <li><a href="#properties">properties</a></li>
+      <li><a href="#uses">in-use</a></li>
       <li><a href="#mechanism">mechanism</a></li>
       <li><a href="#tools">tools</a></li>
+      <li><a href="#dashboard">dashboard</a></li>
       <li><a href="#install">install</a></li>
     </ol>
   </aside>
@@ -587,6 +720,66 @@ p code, td code, li code {
           <h3>Nothing to escape from</h3>
           <p>Plain Markdown in Postgres, self-hosted, Apache-2.0. One pg_dump is a complete
              backup, uploads included. Walk away whenever you want.</p>
+        </article>
+      </div>
+    </section>
+
+
+    <section class="band section" id="uses">
+      <p class="eyebrow">In use</p>
+      <h2>What it looks like day to day</h2>
+      <p class="note">
+        You talk normally. Athena picks the tool, decides where the content belongs, and
+        leaves a page you can open yourself.
+      </p>
+
+      <div class="uses">
+        <article class="use">
+          <p class="use-said">Rate limit on the public API is 100 requests a minute, we should
+            write that down before someone hits it again.</p>
+          <div class="use-did">
+            <span class="tool">append_to_page</span>
+            <span class="arrow">to</span>
+            <span class="path">reference/api</span>
+            <span class="arrow">under</span>
+            <span class="path">## Limits</span>
+          </div>
+        </article>
+
+        <article class="use">
+          <p class="use-said">What did we decide about the queue retry policy?</p>
+          <div class="use-did">
+            <span class="tool">search_knowledge</span>
+            <span class="arrow">found nothing, logged the gap and offered to write</span>
+            <span class="path">projects/queue</span>
+          </div>
+        </article>
+
+        <article class="use">
+          <p class="use-said">That was a useful debugging session, keep it.</p>
+          <div class="use-did">
+            <span class="tool">save_conversation</span>
+            <span class="arrow">to</span>
+            <span class="path">conversations/2026/08/18-queue-backlog</span>
+          </div>
+        </article>
+
+        <article class="use">
+          <p class="use-said">Quick note, the staging certificate expires in March. I will
+            file it properly later.</p>
+          <div class="use-did">
+            <span class="tool">capture_note</span>
+            <span class="arrow">to</span>
+            <span class="path">inbox/2026-08-18-staging-certificate</span>
+          </div>
+        </article>
+
+        <article class="use">
+          <p class="use-said">What is missing from the wiki?</p>
+          <div class="use-did">
+            <span class="tool">get_wiki_stats</span>
+            <span class="arrow">returned counts per area, the stalest pages, and index health</span>
+          </div>
         </article>
       </div>
     </section>
@@ -690,6 +883,56 @@ p code, td code, li code {
             <tr><td>get_wiki_stats</td><td>Size, shape and staleness, so it can answer what is missing</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+
+    <section class="band section" id="dashboard">
+      <p class="eyebrow">Dashboard</p>
+      <h2>What your wiki is missing</h2>
+      <p class="note">
+        Ships with the stack on its own port. Server-rendered HTML, no client JavaScript,
+        no chart library. The list that earns its place is the last one: searches that
+        came back empty.
+      </p>
+
+      <div class="mock" role="img" aria-label="Dashboard preview showing page and word counts, tool calls, index health, which tools get used, and searches that returned nothing.">
+        <div class="mock-bar">
+          <strong>ATHENA</strong>
+          <span class="pills"><span>7d</span><span class="on">30d</span><span>90d</span></span>
+        </div>
+        <div class="mock-body">
+          <div class="mock-tiles">
+            <div class="mock-tile"><div class="k">Pages</div><div class="v">284</div><div class="s">9 areas</div></div>
+            <div class="mock-tile"><div class="k">Words</div><div class="v">153k</div><div class="s">published</div></div>
+            <div class="mock-tile"><div class="k">Tool calls</div><div class="v">1.3k</div><div class="s">last 30 days</div></div>
+            <div class="mock-tile ok"><div class="k">Backup</div><div class="v">36 min</div><div class="s">46 MB, verified</div></div>
+          </div>
+
+          <div class="mock-panels">
+            <div class="mock-panel">
+              <h4>Which tools get used</h4>
+              <div class="mock-rows">
+                <div class="mock-row"><span class="lbl">search_knowledge</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="num">612</span></div>
+                <div class="mock-row"><span class="lbl">get_page</span><span class="track"><span class="fill" style="width:56%"></span></span><span class="num">341</span></div>
+                <div class="mock-row"><span class="lbl">append_to_page</span><span class="track"><span class="fill" style="width:20%"></span></span><span class="num">121</span></div>
+                <div class="mock-row"><span class="lbl">update_page</span><span class="track"><span class="fill" style="width:14%"></span></span><span class="num">84</span></div>
+                <div class="mock-row"><span class="lbl">create_page</span><span class="track"><span class="fill" style="width:6%"></span></span><span class="num">38</span></div>
+              </div>
+            </div>
+
+            <div class="mock-panel">
+              <h4>Searches that found nothing</h4>
+              <div class="mock-q">
+                <div><span>queue retry policy</span><span>6</span></div>
+                <div><span>mqtt broker credentials</span><span>4</span></div>
+                <div><span>restore procedure</span><span>3</span></div>
+                <div><span>certificate renewal</span><span>2</span></div>
+                <div><span>staging database size</span><span>1</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 

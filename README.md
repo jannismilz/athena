@@ -615,6 +615,26 @@ docker compose up -d
 Wiki.js runs its own database migrations on start, and a schema migration is not
 reversible by stopping the container, so take the backup first.
 
+### Upgrading Postgres itself
+
+Postgres will not read a data directory written by a different major version. If
+you change the `pgvector/pgvector:pgNN` tag on a running install, the container
+exits with *database files are incompatible with server*. Dump, wipe, restore:
+
+```bash
+docker compose run --rm backup now              # on the OLD version
+docker compose down
+mv data/postgres data/postgres.old              # keep it until you are happy
+# edit the image tag in docker-compose.yml, and the FROM line in
+# docker/backup/Dockerfile, to the same new major version
+docker compose build backup
+docker compose up -d postgres
+docker compose run --rm backup restore run <stamp>   # for each database
+docker compose up -d
+```
+
+The vector index restores with everything else, so no re-embedding is needed.
+
 ### If something is wrong
 
 | Symptom | Cause |
@@ -626,6 +646,7 @@ reversible by stopping the container, so take the backup first.
 | Dashboard shows pages behind | Indexer catching up, check `docker compose logs indexer` |
 | Tool calls fail with 401 | State file cleared or token changed, reconnect the client |
 | `pg_restore` complains about parameters | Client and server major versions differ, see the Dockerfile note |
+| Postgres exits with "database files are incompatible" | The image major version changed under an existing data directory, see below |
 
 ---
 
@@ -659,8 +680,8 @@ Notes on how it fits together:
   order does not matter.
 - The dashboard is server-rendered HTML with inline SVG charts. No client
   JavaScript, no chart library, no build step.
-- The Postgres major version in compose must match the client in the backup
-  image, or `pg_dump` emits settings an older server rejects.
+- The backup image is built from the official Postgres image, so its client
+  always matches the server major version. Bump both together.
 
 ---
 
