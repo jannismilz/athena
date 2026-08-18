@@ -706,6 +706,30 @@ Notes on how it fits together:
 
 ---
 
+## Publishing the website
+
+`website/index.html` is a single self-contained file, deployed to GitHub Pages
+by `.github/workflows/website.yml` on every push that touches it.
+
+**Enable Pages once, by hand, before the workflow can run:**
+
+1. Repository **Settings**, then **Pages**.
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+
+This cannot be automated from the workflow. The `enablement` input of
+`actions/configure-pages` needs a token with administration rights, and the
+`GITHUB_TOKEN` available to a workflow does not have them. Without the setting
+the run fails at the first step with:
+
+```
+Get Pages site failed. Error: Not Found
+Create Pages site failed. Error: Resource not accessible by integration
+```
+
+Once the setting is in place, re-run the workflow from the Actions tab.
+
+---
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
