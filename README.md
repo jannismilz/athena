@@ -158,7 +158,6 @@ Install Docker, then create a user that owns the deployment:
 ```bash
 sudo useradd --create-home --shell /bin/bash athena
 sudo usermod -aG docker athena
-sudo mkdir -p /srv/athena && sudo chown athena:athena /srv/athena
 ```
 
 Run compose as that user, never with `sudo`, or the bind mounts end up owned by
@@ -174,11 +173,29 @@ Two A records pointing at the host:
 | `wiki.example.com` | Wiki.js, and the dashboard under `/dashboard/` |
 | `athena-mcp.example.com` | the MCP endpoint |
 
-### 3. Configure
+### 3. Lay it out and configure
+
+Everything Athena writes goes through one setting, `ATHENA_DATA_DIR`, so the
+whole installation can live under a single directory. Use two subdirectories
+with different lifecycles:
+
+```
+/athena
+├── app/     the git repository   replaceable, thrown away on every upgrade
+└── data/    postgres, state,     irreplaceable, never touched by git
+             uploads, backups
+```
+
+**Do not put the data inside the repository.** `data/` is in `.gitignore`, and
+`git clean -xdf` deletes ignored files, so one routine command wipes your
+database with no confirmation and no undo. Keeping them as siblings makes that
+impossible.
 
 ```bash
-cd /srv/athena
-git clone https://github.com/jannismilz/athena.git .
+sudo mkdir -p /athena && sudo chown athena:athena /athena
+cd /athena
+git clone https://github.com/jannismilz/athena.git app
+cd app
 cp .env.example .env
 chmod 600 .env        # it holds every secret
 ```
@@ -186,7 +203,7 @@ chmod 600 .env        # it holds every secret
 Set at minimum:
 
 ```bash
-ATHENA_DATA_DIR=/srv/athena/data
+ATHENA_DATA_DIR=/athena/data
 POSTGRES_PASSWORD=...
 MCP_TOKEN=...
 DASHBOARD_TOKEN=...
@@ -194,6 +211,32 @@ DASHBOARD_DB_PASSWORD=...
 MCP_PUBLIC_URL=https://athena-mcp.example.com
 WIKI_PUBLIC_URL=https://wiki.example.com
 ```
+
+Compose creates `/athena/data` and its subdirectories on first start. Run every
+`docker compose` command from `/athena/app`.
+
+<details>
+<summary><b>What ends up where</b></summary>
+
+```
+/athena/data
+├── postgres/     the wiki, users, settings, uploads, activity log, vectors
+├── wikijs/       Wiki.js config, cache, upload cache
+├── mcp/          oauth-state.json, the tokens issued to AI clients
+├── indexer/      index bookkeeping, rebuilt automatically if lost
+├── embeddings/   the downloaded model
+└── backups/      local dumps plus status.json
+```
+
+Only `postgres/` is irreplaceable, and the backup container dumps it hourly.
+Everything else is either regenerated automatically or costs one reconnection.
+
+If you would rather follow the filesystem hierarchy convention, put the data in
+`/srv/athena` and the checkout in `/opt/athena` instead. The single-root layout
+above is simpler on a machine that does one job, and either works: only
+`ATHENA_DATA_DIR` decides.
+
+</details>
 
 ### 4. Reverse proxy
 
