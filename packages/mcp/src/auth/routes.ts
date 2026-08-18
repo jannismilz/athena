@@ -1,17 +1,18 @@
 /** The `/login` page that turns MCP_TOKEN into an approved OAuth session. */
 
+import { clientKey } from '@athena/core'
 import express, { type Request, type Response, type Router } from 'express'
 import { renderLoginPage } from './login-page.ts'
 import type { AthenaOAuthProvider } from './provider.ts'
 
 /**
- * Client address, trusting only the reverse proxy header we set ourselves.
- * Used solely for throttling, never for authorisation.
+ * Client address, used only for throttling and never for authorisation.
+ *
+ * Express resolves this from X-Forwarded-For, but only for proxies it trusts,
+ * which is loopback alone. A remote client cannot forge it.
  */
 function clientIp(req: Request): string {
-  const header = req.headers['x-real-ip']
-  const value = Array.isArray(header) ? header[0] : header
-  return (value || req.ip || 'unknown').trim()
+  return clientKey(req.ip)
 }
 
 function sendPage(res: Response, html: string, status = 200): void {

@@ -10,7 +10,9 @@ import { barChart, columnChart, splitBar } from './charts.ts'
 import { type Html, html } from './html.ts'
 import {
   type ActivityMetrics,
+  type BackupStatus,
   type ContentMetrics,
+  formatBytes,
   formatCount,
   type IndexMetrics,
   type PageRow,
@@ -26,6 +28,7 @@ export type DashboardData = {
   content: ContentMetrics
   activity: ActivityMetrics
   index: IndexMetrics
+  backup: BackupStatus
   generatedAt: string
 }
 
@@ -94,8 +97,17 @@ function queryTable(rows: QueryRow[], emptyMessage: string): Html {
     </div>`
 }
 
+/** Backups run hourly, so two missed runs is a warning and half a day is a fault. */
+function backupTone(backup: BackupStatus): 'good' | 'warning' | 'critical' {
+  if (!backup.ok || backup.ageHours === null) return 'critical'
+  if (backup.ageHours > 12) return 'critical'
+  if (backup.ageHours > 2) return 'warning'
+  return 'good'
+}
+
 export function renderDashboard(data: DashboardData): string {
-  const { content, activity, index } = data
+  const { content, activity, index, backup } = data
+  const backupState = backupTone(backup)
 
   const indexTone = !index.reachable
     ? 'critical'
@@ -134,6 +146,12 @@ export function renderDashboard(data: DashboardData): string {
               : 'in step with the wiki'
             : 'indexer unreachable',
           indexTone,
+        )}
+        ${tile(
+          'Last backup',
+          backup.finishedAt ? relativeAge(backup.finishedAt) : 'never',
+          backup.ok ? formatBytes(backup.bytes) : (backup.error ?? 'failed'),
+          backupState,
         )}
       </div>
 
@@ -219,7 +237,7 @@ export function renderDashboard(data: DashboardData): string {
                 <tr><td>Model</td><td class="num">${index.model ?? 'n/a'}</td></tr>
                 <tr><td>Indexed pages</td><td class="num">${index.indexedPages}</td></tr>
                 <tr><td>Chunks</td><td class="num">${index.indexedChunks}</td></tr>
-                <tr><td>Vectors in Qdrant</td><td class="num">${index.qdrantPoints ?? 'n/a'}</td></tr>
+                <tr><td>Chunks stored</td><td class="num">${index.storedChunks ?? 'n/a'}</td></tr>
                 <tr><td>Pages not yet indexed</td><td class="num">${index.drift}</td></tr>
                 <tr>
                   <td>Last indexed</td>

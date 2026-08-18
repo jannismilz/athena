@@ -1,17 +1,19 @@
 /**
- * Keeping Qdrant in step with Wiki.js.
+ * Keeping the vector index in step with Wiki.js.
  *
  * Wiki.js is the source of truth; this is a derived index that can be thrown
- * away and rebuilt at any time. That is why backups skip Qdrant entirely.
+ * away and rebuilt at any time, which is why losing it costs only the time to
+ * re-embed.
  */
 
 import {
-  ChunkStore,
   chunkMarkdown,
   EmbeddingsClient,
   type IndexerConfig,
   type Logger,
+  type Sql,
   type StoredChunk,
+  VectorStore,
   WikiClient,
 } from '@athena/core'
 import { contentFingerprint, IndexState } from './state.ts'
@@ -36,7 +38,7 @@ export class Indexer {
     private readonly config: IndexerConfig,
     private readonly wiki: WikiClient,
     private readonly embeddings: EmbeddingsClient,
-    private readonly store: ChunkStore,
+    private readonly store: VectorStore,
     private readonly state: IndexState,
     private readonly log: Logger,
   ) {}
@@ -48,7 +50,7 @@ export class Indexer {
    * models cannot be compared, so a change forces the collection to be rebuilt
    * rather than silently returning nonsense results.
    */
-  static async create(config: IndexerConfig, log: Logger): Promise<Indexer> {
+  static async create(config: IndexerConfig, sql: Sql, log: Logger): Promise<Indexer> {
     const wiki = new WikiClient({
       baseUrl: config.wikiUrl,
       token: config.wikiApiToken,
@@ -60,22 +62,21 @@ export class Indexer {
       provider: config.embeddingsProvider,
       apiKey: config.embeddingsApiKey,
     })
-    const store = new ChunkStore(config.qdrantUrl, config.qdrantCollection)
+    const store = new VectorStore(sql)
     const state = new IndexState(config.stateDir)
 
     const dimensions = await embeddings.getDimensions()
     log.info('embedding model ready', { model: config.embeddingsModel, dimensions })
 
     const previousModel = state.getMeta(MODEL_META_KEY)
-    const { dimensionMismatch } = await store.ensureCollection(dimensions)
+    const { rebuilt } = await store.ensureSchema(dimensions)
 
-    if (dimensionMismatch || (previousModel && previousModel !== config.embeddingsModel)) {
-      log.warn('embedding model changed; rebuilding the vector collection', {
+    if (rebuilt || (previousModel && previousModel !== config.embeddingsModel)) {
+      log.warn('embedding model changed, re-indexing every page', {
         from: previousModel,
         to: config.embeddingsModel,
         dimensions,
       })
-      await store.recreateCollection(dimensions)
       state.clear()
     }
     state.setMeta(MODEL_META_KEY, config.embeddingsModel)
@@ -227,11 +228,10 @@ export class Indexer {
     const remote = await this.store.stats().catch(() => null)
     return {
       model: this.config.embeddingsModel,
-      collection: this.config.qdrantCollection,
       indexedPages: local.pages,
       indexedChunks: local.chunks,
       lastIndexedAt: local.lastIndexedAt,
-      qdrant: remote,
+      store: remote,
       lastSync: this.lastSync,
       lastSyncError: this.lastSyncError,
       syncInProgress: this.syncing !== null,

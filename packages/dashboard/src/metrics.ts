@@ -44,12 +44,22 @@ export type ActivityMetrics = {
   failures: Array<{ tool: string; error: string; ts: string }>
 }
 
+export type BackupStatus = {
+  ok: boolean
+  finishedAt: string | null
+  bytes: number | null
+  durationSeconds: number | null
+  destination: string | null
+  error: string | null
+  ageHours: number | null
+}
+
 export type IndexMetrics = {
   reachable: boolean
   model: string | null
   indexedPages: number
   indexedChunks: number
-  qdrantPoints: number | null
+  storedChunks: number | null
   lastIndexedAt: string | null
   lastSync: Record<string, unknown> | null
   lastSyncError: string | null
@@ -57,6 +67,18 @@ export type IndexMetrics = {
 }
 
 const DAY_MS = 86_400_000
+
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes)) return 'n/a'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`
+}
 
 export function formatCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
@@ -244,14 +266,14 @@ export async function indexMetrics(indexerUrl: string, wikiPages: number): Promi
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const stats = (await response.json()) as Record<string, unknown>
-    const qdrant = stats.qdrant as { points?: number } | null
+    const store = stats.store as { chunks?: number } | null
 
     return {
       reachable: true,
       model: (stats.model as string) ?? null,
       indexedPages: Number(stats.indexedPages ?? 0),
       indexedChunks: Number(stats.indexedChunks ?? 0),
-      qdrantPoints: qdrant?.points ?? null,
+      storedChunks: store?.chunks ?? null,
       lastIndexedAt: (stats.lastIndexedAt as string) ?? null,
       lastSync: (stats.lastSync as Record<string, unknown>) ?? null,
       lastSyncError: (stats.lastSyncError as string) ?? null,
@@ -263,11 +285,43 @@ export async function indexMetrics(indexerUrl: string, wikiPages: number): Promi
       model: null,
       indexedPages: 0,
       indexedChunks: 0,
-      qdrantPoints: null,
+      storedChunks: null,
       lastIndexedAt: null,
       lastSync: null,
       lastSyncError: null,
       drift: 0,
+    }
+  }
+}
+
+/**
+ * Read the status file the backup container writes after each run.
+ *
+ * A backup nobody can see the state of is not a backup, which is why this is on
+ * the dashboard rather than only in a log.
+ */
+export async function backupStatus(path: string): Promise<BackupStatus> {
+  try {
+    const data = JSON.parse(await Bun.file(path).text()) as Record<string, unknown>
+    const finishedAt = (data.finished_at as string) ?? null
+    return {
+      ok: data.ok === true,
+      finishedAt,
+      bytes: data.bytes === undefined ? null : Number(data.bytes),
+      durationSeconds: data.duration_seconds === undefined ? null : Number(data.duration_seconds),
+      destination: (data.destination as string) ?? null,
+      error: (data.error as string) ?? null,
+      ageHours: finishedAt ? (Date.now() - Date.parse(finishedAt)) / 3_600_000 : null,
+    }
+  } catch {
+    return {
+      ok: false,
+      finishedAt: null,
+      bytes: null,
+      durationSeconds: null,
+      destination: null,
+      error: 'no backup has reported yet',
+      ageHours: null,
     }
   }
 }

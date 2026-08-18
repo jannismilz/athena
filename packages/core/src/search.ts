@@ -1,5 +1,5 @@
 /**
- * Merging classic (Wiki.js full-text) and semantic (Qdrant) search results.
+ * Merging keyword search from Wiki.js with semantic search over the chunk index.
  *
  * The two searches answer different questions and neither is allowed to
  * suppress the other, so results are fused with Reciprocal Rank Fusion rather
@@ -53,7 +53,7 @@ type Bucket = {
  *
  * A page found by only one source keeps its place; a page found by both rises.
  * Every hit carries a path, because the caller's next step is always to load
- * the real page from Wiki.js. Qdrant is discovery, never the source of truth.
+ * the real page from Wiki.js. The index is discovery, never the source of truth.
  */
 export function mergeSearchHits(
   classic: ClassicHit[],

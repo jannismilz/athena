@@ -579,13 +579,14 @@ p code, td code, li code {
         </article>
         <article class="card">
           <h3>A dashboard with an opinion</h3>
-          <p>Past the page counts it lists the searches that returned nothing. Each one is a
-             question your wiki could not answer yet.</p>
+          <p>Ships with the stack on its own port. Past the page counts it lists the searches
+             that returned nothing, which assistant did what, and whether the last backup
+             actually worked.</p>
         </article>
         <article class="card">
           <h3>Nothing to escape from</h3>
-          <p>Plain Markdown in Postgres, self-hosted, Apache-2.0. Wiki.js can mirror every
-             page to Git continuously. Walk away whenever you want.</p>
+          <p>Plain Markdown in Postgres, self-hosted, Apache-2.0. One pg_dump is a complete
+             backup, uploads included. Walk away whenever you want.</p>
         </article>
       </div>
     </section>
@@ -601,7 +602,7 @@ p code, td code, li code {
       <figure class="figure">
         <div class="figure-frame">
           <svg viewBox="0 0 788 300" role="img"
-               aria-label="Your AI client speaks MCP to athena-mcp. That server reads from and writes to Wiki.js. Saved pages go to athena-indexer, which chunks and embeds them into Qdrant, and Qdrant returns semantic hits to athena-mcp.">
+               aria-label="Your AI client speaks MCP to athena-mcp. That server reads from and writes to Wiki.js. Saved pages go to athena-indexer, which chunks and embeds them into Postgres, and Postgres returns semantic hits to athena-mcp.">
             <defs>
               <marker id="tip" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="5" markerHeight="5" orient="auto">
                 <path d="M0 0 L8 4 L0 8 Z" fill="var(--rule-firm)"></path>
@@ -624,10 +625,10 @@ p code, td code, li code {
             <text class="d-name" x="700" y="50" text-anchor="middle">Wiki.js</text>
             <text class="d-sub"  x="700" y="67" text-anchor="middle">source of truth</text>
 
-            <!-- Bottom row: qdrant, indexer -->
+            <!-- Bottom row: vector store, indexer -->
             <rect class="d-node" x="306" y="196" width="176" height="56" rx="3"></rect>
-            <text class="d-name" x="394" y="220" text-anchor="middle">Qdrant</text>
-            <text class="d-sub"  x="394" y="237" text-anchor="middle">meaning, rebuildable</text>
+            <text class="d-name" x="394" y="220" text-anchor="middle">Postgres</text>
+            <text class="d-sub"  x="394" y="237" text-anchor="middle">pgvector, rebuildable</text>
 
             <rect class="d-node" x="612" y="196" width="176" height="56" rx="3"></rect>
             <text class="d-name" x="700" y="220" text-anchor="middle">athena-indexer</text>
@@ -645,16 +646,16 @@ p code, td code, li code {
             <path class="d-edge-write" d="M700 82 L700 188" marker-end="url(#tipw)"></path>
             <text class="d-tag-write" x="710" y="139">page saved</text>
 
-            <!-- indexer -> qdrant -->
+            <!-- indexer -> vector store -->
             <path class="d-edge-write" d="M612 224 L490 224" marker-end="url(#tipw)"></path>
             <text class="d-tag-write" x="551" y="215" text-anchor="middle">embed</text>
 
-            <!-- qdrant -> mcp -->
+            <!-- vector store -> mcp -->
             <path class="d-edge" d="M394 196 L394 90" marker-end="url(#tip)"></path>
             <text class="d-tag" x="384" y="147" text-anchor="end">semantic hits</text>
 
             <line x1="0" y1="276" x2="788" y2="276" stroke="var(--rule)"></line>
-            <text class="d-sub" x="0" y="294">Qdrant is discovery only. Delete it and the indexer rebuilds it from the wiki.</text>
+            <text class="d-sub" x="0" y="294">Vectors sit beside the wiki data, so one backup covers everything.</text>
           </svg>
         </div>
         <figcaption>Your Wiki.js token and database credentials never leave the server.</figcaption>
@@ -703,7 +704,7 @@ p code, td code, li code {
         <li>
           <div>
             <h3>Bring the stack up</h3>
-            <p>Postgres, Qdrant, Wiki.js, the embedding model and the three Athena services.</p>
+            <p>Postgres, Wiki.js, the embedding model, and the Athena services.</p>
           </div>
         </li>
         <li>
@@ -735,8 +736,13 @@ cp .env.example .env
 docker compose up -d</pre>
 
       <p class="note" style="margin-top:1.5rem">
-        Backups are one <code>pg_dump</code>. Wiki.js keeps pages, users, settings and
-        uploaded files in Postgres, so a single dump captures all of it.
+        A backup container runs hourly, verifies each dump, and pushes to any rclone
+        destination. One <code>pg_dump</code> is complete: Wiki.js keeps pages, users,
+        settings and uploaded files in Postgres, and the search vectors sit beside them.
+      </p>
+      <p class="note">
+        The dashboard comes up with everything else on port 8082, showing what your
+        assistant did and which searches your wiki could not answer.
       </p>
 
       <div class="actions" style="margin-top:1.75rem">
@@ -746,7 +752,7 @@ docker compose up -d</pre>
 
     <footer class="colophon">
       <span>Athena. Apache-2.0.</span>
-      <span>Built on <a href="https://js.wiki">Wiki.js</a> and <a href="https://qdrant.tech">Qdrant</a>.</span>
+      <span>Built on <a href="https://js.wiki">Wiki.js</a> and <a href="https://github.com/pgvector/pgvector">pgvector</a>.</span>
       <span><a href="https://github.com/jannismilz/athena">github.com/jannismilz/athena</a></span>
     </footer>
 

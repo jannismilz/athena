@@ -14,26 +14,29 @@ You
 Claude / ChatGPT / Cursor
  |  MCP over HTTPS
  v
-athena-mcp ---- search --> Wiki.js (keyword) + Qdrant (meaning)
+athena-mcp ---- search --> Wiki.js (keyword) + Postgres (meaning, pgvector)
  |              read ----> Wiki.js
- '------------  write ---> Wiki.js --> athena-indexer --> Qdrant
+ '------------  write ---> Wiki.js --> athena-indexer --> Postgres
 ```
 
-Wiki.js is the source of truth. Qdrant only helps find things and can be deleted
-and rebuilt at any time.
+Wiki.js is the source of truth. The vector index only helps find things and can
+be deleted and rebuilt at any time.
 
 **Contents**
 
 1. [Why](#why)
-2. [Quickstart](#quickstart)
-3. [Production deployment](#production-deployment)
-4. [Backups](#backups)
-5. [Restoring](#restoring)
-6. [Connecting an AI](#connecting-an-ai)
-7. [Tools](#tools)
-8. [Configuration](#configuration)
-9. [Operations](#operations)
-10. [Development](#development)
+2. [What runs](#what-runs)
+3. [Quickstart](#quickstart)
+4. [Authentication, explained](#authentication-explained)
+5. [Production deployment](#production-deployment)
+6. [The dashboard](#the-dashboard)
+7. [Backups](#backups)
+8. [Restoring](#restoring)
+9. [Connecting an AI](#connecting-an-ai)
+10. [Tools](#tools)
+11. [Configuration](#configuration)
+12. [Operations](#operations)
+13. [Development](#development)
 
 ---
 
@@ -53,8 +56,30 @@ what it writes is a real wiki page: browsable, editable, greppable, yours.
   whatever the model claims about itself.
 - **Appends, not rewrites.** Adding a fact costs a paragraph instead of
   regenerating the page.
-- **A dashboard with an opinion.** Past the page counts, it lists searches that
-  returned nothing. Each is a page worth writing.
+- **A dashboard with an opinion.** Past the page counts, it lists the searches
+  that returned nothing. Each is a page worth writing.
+
+---
+
+## What runs
+
+Seven containers, and only three of them are Athena.
+
+| Service | Port | What it is |
+|---|---|---|
+| `postgres` | internal | Wiki.js data, Athena's activity log, and the vectors via pgvector |
+| `wikijs` | 3000 | The wiki you read and edit |
+| `embeddings` | internal | The embedding model, on CPU |
+| `mcp` | 8080 | What your AI connects to |
+| `indexer` | 8081 | Keeps the vector index in step with the wiki |
+| `dashboard` | 8082 | Metrics |
+| `backup` | none | Hourly dump, verify, push to rclone |
+
+There is no separate vector database. Vectors live in Postgres, so one backup
+covers everything and there is one less service to run.
+
+Every port binds to `127.0.0.1`. Nothing is reachable from outside until you put
+a reverse proxy in front of it.
 
 ---
 
@@ -62,8 +87,6 @@ what it writes is a real wiki page: browsable, editable, greppable, yours.
 
 For trying it locally. For anything reachable from the internet, read
 [Production deployment](#production-deployment) first.
-
-Requires Docker and Docker Compose.
 
 ```bash
 git clone https://github.com/jannismilz/athena.git
@@ -93,27 +116,88 @@ minute or two on first boot is expected.
 
 ---
 
-## Production deployment
+## Authentication, explained
 
-Athena binds every port to `127.0.0.1`. Nothing is reachable from outside the
-host until you put a reverse proxy in front of it, which is deliberate: the MCP
-endpoint gives access to everything in your wiki.
+There are exactly **four secrets**, and you generate all of them. No credential
+belonging to Claude, OpenAI or anyone else is ever stored in `.env`.
+
+| Secret | Who uses it | What it protects |
+|---|---|---|
+| `POSTGRES_PASSWORD` | the services | the database |
+| `WIKI_API_TOKEN` | mcp, indexer | the Wiki.js API, created inside Wiki.js |
+| `MCP_TOKEN` | your AI client | the MCP endpoint |
+| `DASHBOARD_TOKEN` | you | the dashboard |
+
+### Why there is an OAuth server, and what it does not do
+
+`MCP_TOKEN` works two ways, because AI clients authenticate two different ways.
+
+**Header clients** such as Cursor and Claude Desktop send
+`Authorization: Bearer <MCP_TOKEN>`. That is the whole mechanism.
+
+**Claude.ai in the browser** cannot do that. Its custom connectors only support
+OAuth, and the MCP specification requires dynamic client registration, so a
+server that accepts browser Claude has to *be* an authorization server. Athena
+therefore implements one:
+
+1. Claude registers itself and receives a generated client id. No secret of
+   yours is involved.
+2. Claude sends you to a login page on your own server.
+3. You type `MCP_TOKEN` as the password. That is the human approval step.
+4. Athena issues Claude an access token and a refresh token that Athena minted
+   itself.
+
+**Those tokens are written to `data/mcp/oauth-state.json`, never to `.env`.**
+They are Athena's own tokens, scoped to your server. Revoking them is:
+
+```bash
+rm data/mcp/oauth-state.json && docker compose restart mcp
+```
+
+Every client then has to connect again. If you never use browser Claude, you can
+ignore the whole mechanism; the bearer path does not touch it.
+
+### What is protected, and how
+
+- The MCP endpoint rejects unauthenticated requests with 401 and never explains
+  why.
+- The login page throttles after 5 wrong passwords per address, and burns a
+  login link after 3 attempts.
+- The dashboard throttles the same way. It is read-only and never writes.
+- Secret comparisons are constant time, so a token cannot be guessed one
+  character at a time.
+- Both services trust proxy headers only from loopback, so a remote client
+  cannot forge its address to escape a throttle.
+- Containers run as a non-root user, uid 10001.
+- Your Wiki.js token and database password never leave the server. An AI client
+  only ever holds a token Athena minted.
+
+### What is deliberately not there
+
+- **No per-tool permissions.** Any authenticated client can use every tool,
+  including `delete_page`. Wiki.js keeps page history, so a delete is
+  recoverable from the database, but treat `MCP_TOKEN` as full write access to
+  your wiki.
+- **No multi-user model.** Athena assumes one owner. Wiki.js has its own users
+  and permissions for reading the wiki itself.
+
+---
+
+## Production deployment
 
 ### 1. Host preparation
 
-A small VPS is enough. 2 vCPU and 4 GB RAM runs the whole stack including the
-embedding model on CPU.
+A 4 GB VPS runs the whole stack including the embedding model on CPU.
 
 ```bash
-# Keep only SSH, HTTP and HTTPS open. Postgres, Qdrant and the Athena
-# services must never be exposed.
+# Keep only SSH, HTTP and HTTPS open. Postgres and the Athena services must
+# never be exposed.
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
-sudo ufw status verbose
 ```
 
 Install Docker from the official repository, then create an unprivileged user
@@ -129,24 +213,17 @@ sudo chown athena:athena /srv/athena
 Run everything below as that user. Do not run compose with `sudo`, or the bind
 mounts end up owned by root.
 
+Membership of the `docker` group is equivalent to root on the host, and anyone
+in it can read your secrets with `docker inspect`. Keep the group small.
+
 ### 2. DNS
 
 Two A records pointing at the host:
 
 | Name | Serves |
 |---|---|
-| `wiki.example.com` | Wiki.js, the interface you read and edit in |
+| `wiki.example.com` | Wiki.js, and the dashboard under `/dashboard/` |
 | `athena-mcp.example.com` | the MCP endpoint your assistant connects to |
-
-The dashboard can share the wiki hostname on a path, or take a third name. Both
-are covered below.
-
-Check DNS resolves before requesting certificates:
-
-```bash
-dig +short wiki.example.com A
-dig +short athena-mcp.example.com A
-```
 
 ### 3. Configuration
 
@@ -169,13 +246,11 @@ WIKI_PUBLIC_URL=https://wiki.example.com
 TZ=Europe/Berlin
 ```
 
-`MCP_PUBLIC_URL` must be a bare `https://` origin with no path. Not `/mcp`. The
-server refuses to start otherwise, because a wrong value here breaks OAuth
-discovery in a way that is hard to diagnose from the client side.
+`MCP_PUBLIC_URL` must be a bare `https://` origin with no path, not `/mcp`. The
+server refuses to start otherwise, because a wrong value breaks OAuth discovery
+in a way that is hard to diagnose from the client side.
 
 ### 4. Reverse proxy and TLS
-
-Install nginx and certbot on the host, then create the two sites.
 
 ```nginx
 # /etc/nginx/sites-available/wiki.example.com
@@ -197,7 +272,6 @@ server {
         proxy_read_timeout 120s;
     }
 
-    # The dashboard, on the same hostname.
     location /dashboard/ {
         proxy_pass http://127.0.0.1:8082/;
         proxy_set_header Host              $host;
@@ -223,8 +297,8 @@ server {
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # MCP streams responses. Without these the connection buffers and
-        # long tool calls appear to hang.
+        # MCP streams responses. Without these the connection buffers and long
+        # tool calls appear to hang.
         proxy_set_header Connection "";
         proxy_buffering off;
         proxy_cache off;
@@ -233,10 +307,8 @@ server {
 }
 ```
 
-`X-Real-IP` matters: the login throttle counts failures per address, and without
+`X-Forwarded-For` matters: the throttles count failures per address, and without
 it every attempt looks like it came from the proxy.
-
-Enable the sites and request certificates:
 
 ```bash
 sudo ln -sf /etc/nginx/sites-available/wiki.example.com /etc/nginx/sites-enabled/
@@ -246,7 +318,6 @@ sudo nginx -t && sudo systemctl reload nginx
 
 sudo certbot --nginx -d wiki.example.com -d athena-mcp.example.com \
   --agree-tos --no-eff-email --redirect -m you@example.com
-
 sudo certbot renew --dry-run
 ```
 
@@ -272,16 +343,47 @@ Then, in Wiki.js:
 ```bash
 curl -sI https://wiki.example.com | head -1
 curl -s  https://athena-mcp.example.com/health
-curl -s  https://athena-mcp.example.com/.well-known/oauth-authorization-server | head -c 200
 
 # The MCP endpoint must reject unauthenticated calls.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://athena-mcp.example.com/mcp
 # expected: 401
 
 # Nothing but 80 and 443 answers from outside.
-sudo ss -tlnp | grep -E '3000|8080|8081|8082|5432|6333'
+sudo ss -tlnp | grep -E '3000|8080|8081|8082|5432'
 # every line should show 127.0.0.1, never 0.0.0.0
 ```
+
+---
+
+## The dashboard
+
+A separate service on port 8082, not part of the public site. It answers what a
+page count cannot: what the AI actually did, and what your wiki is missing.
+
+```
+https://wiki.example.com/dashboard/?token=YOUR_DASHBOARD_TOKEN
+```
+
+The token is exchanged for a cookie by an immediate redirect, so it appears in
+the URL only once. Prefer a bearer header for scripts:
+
+```bash
+curl -H "Authorization: Bearer $DASHBOARD_TOKEN" \
+  https://wiki.example.com/dashboard/api/metrics?days=30
+```
+
+What it shows:
+
+- **Content**: pages, words, pages per area, the largest pages, and the ones
+  going stale.
+- **AI activity**: calls per day, which tools get used, which assistant, and the
+  read versus write split.
+- **Searches that returned nothing**: the most useful list on the page. Each row
+  is a question your wiki could not answer.
+- **Index health**: chunks stored, pages indexed, how far behind the index is.
+- **Backup**: when the last run finished, how big it was, and where it went.
+
+It is read-only and never writes to the wiki.
 
 ---
 
@@ -291,162 +393,78 @@ sudo ss -tlnp | grep -E '3000|8080|8081|8082|5432|6333'
 users, groups, permissions, settings, navigation *and the bytes of every
 uploaded file* in Postgres. Uploads live in the `assetData` table as binary
 columns; the files under `data/wikijs/uploads` are only a rendering cache.
-Athena's own activity log lives in a second database on the same server.
+Athena's activity log and the search vectors live in a second database on the
+same server.
 
-So there is nothing to back up outside Postgres:
-
-| Data | Where it lives | In the dump |
+| Data | Where it lives | In the backup |
 |---|---|---|
 | Pages, history, users, settings | Postgres, `wiki` database | yes |
 | Uploaded images and files | Postgres, `assetData` table | yes |
 | Activity log behind the dashboard | Postgres, `athena` database | yes |
-| Search vectors | Qdrant | no, and it does not need to be |
+| Search vectors | Postgres, `athena` database | yes |
 | Index bookkeeping | `data/indexer` | no, rebuilt automatically |
 | OAuth client registrations | `data/mcp` | no, clients reconnect |
 | Secrets | `.env` | no, keep a copy in a password manager |
 
-Qdrant is excluded on purpose. Every vector in it is derived from the wiki, and
-the indexer rebuilds the whole collection on its own. Backing it up would cost
-space to store something regenerable.
+### The backup container
 
-### The backup command
+Runs hourly by default. Each run dumps both databases, checks that every dump is
+readable, keeps a local copy under `data/backups/archive`, pushes to your rclone
+destination, verifies the upload matches, and only then prunes old copies. A
+failed run can never delete your last good backup.
 
-```bash
-cd /srv/athena
-docker compose exec -T postgres pg_dump -U athena -Fc -d wiki   > wiki.dump
-docker compose exec -T postgres pg_dump -U athena -Fc -d athena > athena.dump
-```
-
-`-T` is not optional. Without it, Docker allocates a TTY, converts `\n` to
-`\r\n` in the stream, and produces a dump file that `pg_restore` cannot read.
-The corruption is silent: the file looks like a plausible size and only fails
-when you try to restore it, which is the worst possible time to find out.
-
-`-Fc` is the custom format: compressed, and restorable table by table.
-
-### Automating it
-
-A script that dumps, verifies, rotates and reports:
+Configure it entirely in `.env`:
 
 ```bash
-sudo tee /usr/local/bin/athena-backup >/dev/null <<'EOF'
-#!/bin/bash
-set -euo pipefail
+BACKUP_ENABLED=true
+BACKUP_CRON=0 * * * *
+BACKUP_KEEP_LOCAL_DAYS=7
+BACKUP_KEEP_REMOTE_DAYS=30
 
-STACK=/srv/athena
-DEST=/var/backups/athena
-KEEP_DAYS=30
-STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+# Where to push. Empty keeps backups on this host only.
+BACKUP_REMOTE=s3:my-bucket/athena
 
-mkdir -p "$DEST"
-cd "$STACK"
-
-# A run that dies partway leaves a truncated file behind, and a zero-byte
-# .dump looks like a backup in a directory listing. Remove whatever this run
-# was writing unless it finished cleanly.
-CURRENT=""
-cleanup() {
-  if [ -n "$CURRENT" ]; then rm -f "$CURRENT"; fi
-  return 0   # the trap's status becomes the script's, so never fail here
-}
-trap cleanup EXIT
-
-for DB in wiki athena; do
-  CURRENT="$DEST/${DB}-${STAMP}.dump"
-  docker compose exec -T postgres pg_dump -U athena -Fc -d "$DB" > "$CURRENT"
-
-  # A dump that cannot be read is not a backup, so check it now rather than
-  # during a restore. pg_restore cannot read a custom-format archive from a
-  # pipe, so the file is staged inside the container first.
-  if ! docker compose exec -T postgres \
-       sh -c 'cat > /tmp/verify.dump && pg_restore --list /tmp/verify.dump >/dev/null; \
-              rc=$?; rm -f /tmp/verify.dump; exit $rc' < "$CURRENT"; then
-    echo "athena-backup: the $DB dump is unreadable, previous backups are untouched" >&2
-    exit 1
-  fi
-
-  CURRENT=""   # this one is complete and verified, so keep it
-done
-
-# Prune only after every dump succeeded, so a bad run can never delete the
-# last good copy.
-find "$DEST" -name '*.dump' -mtime +$KEEP_DAYS -delete
-
-echo "athena-backup: ok, $(du -sh "$DEST" | cut -f1) in $DEST"
-EOF
-sudo chmod +x /usr/local/bin/athena-backup
+RCLONE_CONFIG_S3_TYPE=s3
+RCLONE_CONFIG_S3_PROVIDER=AWS
+RCLONE_CONFIG_S3_ACCESS_KEY_ID=...
+RCLONE_CONFIG_S3_SECRET_ACCESS_KEY=...
+RCLONE_CONFIG_S3_REGION=eu-central-1
+RCLONE_CONFIG_S3_ENDPOINT=            # set this for B2, Wasabi, MinIO, Hetzner
 ```
 
-Run it hourly with a systemd timer:
+rclone is configured purely from environment variables, so no credentials are
+written to a config file anywhere on disk.
+
+To encrypt before anything leaves the host, add a crypt remote and point
+`BACKUP_REMOTE` at it. The destination then only ever receives ciphertext,
+including the file names:
 
 ```bash
-sudo tee /etc/systemd/system/athena-backup.service >/dev/null <<'EOF'
-[Unit]
-Description=Athena database backup
-After=docker.service
-
-[Service]
-Type=oneshot
-User=athena
-ExecStart=/usr/local/bin/athena-backup
-EOF
-
-sudo tee /etc/systemd/system/athena-backup.timer >/dev/null <<'EOF'
-[Unit]
-Description=Hourly Athena database backup
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-RandomizedDelaySec=5m
-
-[Install]
-WantedBy=timers.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now athena-backup.timer
-
-# Check it
-sudo systemctl start athena-backup.service
-sudo systemctl status athena-backup.service
-systemctl list-timers athena-backup.timer
+BACKUP_REMOTE=crypt:
+RCLONE_CONFIG_CRYPT_TYPE=crypt
+RCLONE_CONFIG_CRYPT_REMOTE=s3:my-bucket/athena
+RCLONE_CONFIG_CRYPT_PASSWORD=<rclone obscure ...>
+RCLONE_CONFIG_CRYPT_PASSWORD2=<rclone obscure ...>
 ```
 
-### Getting the dumps off the host
+Keep both crypt passwords in your password manager. Without them the backups are
+unreadable, including by you.
 
-A backup on the same disk as the database is not a backup. Copy the directory
-somewhere else on a schedule. Any of these work:
+### Using it
 
 ```bash
-# rclone, to S3, Backblaze, or anything else it supports
-rclone sync /var/backups/athena remote:athena-backups
+# Take one backup now, rather than waiting for the hour
+docker compose run --rm backup now
 
-# or restic, which gives deduplication and encryption
-restic -r s3:s3.amazonaws.com/my-bucket backup /var/backups/athena
+# See what exists, locally and on the remote
+docker compose run --rm backup restore list
+
+# Watch the schedule
+docker compose logs -f backup
 ```
 
-Whatever you choose, encrypt it if it leaves your control. The dump contains
-every page in your wiki plus password hashes.
-
-### A second, human-readable copy
-
-Optional, and not a substitute for the dump. Wiki.js can mirror page content to
-a Git repository continuously: **Administration, Storage, Git**. That gives you
-readable Markdown with full history, which is pleasant for diffing and for
-reading a page without a running database.
-
-It only covers page content. Users, permissions, settings and uploads are not
-included, so keep the `pg_dump` regardless.
-
-### Check your backups exist
-
-```bash
-ls -lh /var/backups/athena | tail -5
-```
-
-The dashboard shows page and index health but does not watch the host's
-filesystem, so this check is on you.
+The dashboard shows the result of the last run, so a silently broken backup does
+not stay invisible.
 
 ---
 
@@ -454,39 +472,24 @@ filesystem, so this check is on you.
 
 Practise this before you need it. A restore procedure nobody has run is a guess.
 
-### Inspect a dump without restoring
-
-`pg_restore` needs to seek within a custom-format archive, so it cannot read one
-from a pipe. Stage the file inside the container first:
-
 ```bash
-docker compose exec -T postgres \
-  sh -c 'cat > /tmp/check.dump && pg_restore --list /tmp/check.dump; rm -f /tmp/check.dump' \
-  < wiki.dump | head -20
-```
+# 1. See what you have
+docker compose run --rm backup restore list
 
-A readable dump prints its table of contents. A corrupt one prints
-`could not read from input file`. This is the check worth running on a schedule,
-because both failure modes above are silent until you try to restore.
-
-### Restore the wiki database
-
-```bash
-cd /srv/athena
-
-# 1. Stop everything that writes, but keep Postgres running.
+# 2. Stop everything that writes, keeping Postgres up
 docker compose stop wikijs mcp indexer dashboard
 
-# 2. Restore. --clean --if-exists drops the existing objects first.
-docker compose exec -T postgres \
-  pg_restore -U athena -d wiki --clean --if-exists --no-owner --no-privileges \
-  < wiki.dump
+# 3. Restore. It asks you to type the database name to confirm.
+docker compose run --rm backup restore run 2026-08-18T115529Z
 
-# 3. Start back up.
+# 4. Start back up
 docker compose start wikijs mcp indexer dashboard
 ```
 
-The search index will briefly disagree with the restored wiki. It repairs
+To check a backup without restoring it, `restore fetch <stamp>` downloads it and
+reports whether each dump is readable.
+
+The search index disagrees with the restored wiki for a moment and then repairs
 itself: the indexer re-reads every page and re-embeds anything whose content
 changed. To force it immediately:
 
@@ -494,16 +497,7 @@ changed. To force it immediately:
 docker compose exec -T indexer bun -e 'await fetch("http://127.0.0.1:8081/sync",{method:"POST"})'
 ```
 
-If the restore moved you back far enough that pages were deleted, also clear the
-stale vectors:
-
-```bash
-docker compose down indexer
-sudo rm -rf data/indexer data/qdrant
-docker compose up -d indexer
-```
-
-### Restore onto a fresh host
+### Onto a fresh host
 
 ```bash
 git clone https://github.com/jannismilz/athena.git /srv/athena
@@ -511,20 +505,13 @@ cd /srv/athena
 cp /path/to/saved/.env .env      # from your password manager
 chmod 600 .env
 docker compose up -d postgres
-# wait for it to report healthy
-docker compose exec -T postgres pg_restore -U athena -d wiki \
-  --clean --if-exists --no-owner --no-privileges < wiki.dump
+docker compose run --rm backup restore run <stamp>
 docker compose up -d
 ```
-
-Qdrant and the indexer state rebuild themselves on first sync.
 
 ---
 
 ## Connecting an AI
-
-Everything is served from `MCP_PUBLIC_URL`, which must be a bare `https://`
-origin with no path.
 
 **Claude.ai**, under Settings, Connectors, Add custom connector:
 
@@ -532,7 +519,7 @@ origin with no path.
 - Leave client ID and secret empty. Athena registers the client itself.
 - A browser page asks for a password. It is your `MCP_TOKEN`.
 
-**Cursor and other header-auth clients**, in `~/.cursor/mcp.json`:
+**Cursor, Claude Desktop and other header clients**:
 
 ```json
 {
@@ -544,12 +531,6 @@ origin with no path.
   }
 }
 ```
-
-Your Wiki.js API token and database credentials never leave the server. A client
-only ever holds a token Athena minted.
-
-To revoke a client, delete `data/mcp/oauth-state.json` and restart the MCP
-service. Every client then has to connect again.
 
 ---
 
@@ -587,40 +568,34 @@ immediately instead of at three in the morning.
 | `ATHENA_INSTANCE_NAME` | `Athena` | Shown on the login page and dashboard |
 | `ATHENA_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TZ` | `UTC` | Used for provenance stamps and dated paths |
-| `POSTGRES_USER` | `athena` | |
 | `POSTGRES_PASSWORD` | required | |
 | `POSTGRES_DB` | `wiki` | The Wiki.js database |
-| `ATHENA_DB` | `athena` | Activity log, created automatically |
+| `ATHENA_DB` | `athena` | Activity log and vectors, created automatically |
 | `WIKI_API_TOKEN` | required | Wiki.js, Administration, API |
 | `WIKI_LOCALE` | `en` | Content language |
 | `WIKI_PUBLIC_URL` | `http://localhost:3000` | Used for dashboard links |
 | `MCP_TOKEN` | required | Bearer token and browser login password |
 | `MCP_PUBLIC_URL` | required | Bare https origin, no path |
 | `DASHBOARD_TOKEN` | required | Protects the dashboard |
-| `EMBEDDINGS_MODEL` | `intfloat/multilingual-e5-small` | Changing it forces a full reindex |
-| `EMBEDDINGS_PROVIDER` | `tei` | `tei` or `openai` for any compatible endpoint |
-| `EMBEDDINGS_API_KEY` | empty | Only for `openai` |
+| `EMBEDDINGS_MODEL` | `intfloat/multilingual-e5-small` | Changing it re-indexes everything |
+| `EMBEDDINGS_PROVIDER` | `tei` | `tei`, or `openai` for a compatible endpoint |
 | `INDEX_INTERVAL_SECONDS` | `300` | Full reconciliation interval |
 | `CHUNK_MAX_CHARS` | `1200` | Chunk size ceiling |
-| `QDRANT_COLLECTION` | `wiki_chunks` | |
+| `BACKUP_*` | see `.env.example` | Schedule, retention and rclone destination |
 
-Changing `EMBEDDINGS_MODEL` changes the vector width. Vectors from two models
-cannot be compared, so the indexer detects the change, recreates the collection,
-and re-embeds everything. Wiki.js content is untouched, but expect one full
-rebuild.
+Changing `EMBEDDINGS_MODEL` changes the vector width, and vectors from two
+models cannot be compared, so the indexer detects it, rebuilds the table, and
+re-embeds every page. Wiki.js content is untouched.
 
 ---
 
 ## Operations
 
 ```bash
-# Logs
 docker compose logs -f mcp
 docker compose logs -f indexer
 
-# Health
 curl -s localhost:8080/health
-curl -s localhost:8081/health
 curl -s localhost:8081/stats | python3 -m json.tool
 
 # Force a full reconciliation
@@ -631,26 +606,26 @@ docker compose exec -T indexer bun -e 'await fetch("http://127.0.0.1:8081/sync",
 
 ```bash
 cd /srv/athena
-/usr/local/bin/athena-backup     # always, before anything else
+docker compose run --rm backup now    # always, before anything else
 git pull
 docker compose build
 docker compose up -d
-docker compose ps
 ```
 
-Wiki.js runs its own database migrations on start. Take the backup first, since
-a schema migration is not reversible by stopping the container.
+Wiki.js runs its own database migrations on start, and a schema migration is not
+reversible by stopping the container, so take the backup first.
 
 ### If something is wrong
 
 | Symptom | Cause |
 |---|---|
-| MCP exits at boot with a config list | A required variable is missing or still `CHANGE_ME` |
+| A service exits at boot with a config list | A required variable is missing or still `CHANGE_ME` |
 | Claude cannot connect, no login page | `MCP_PUBLIC_URL` has a path, or is not https |
-| Login page rejects the right password | Throttled after 5 failures per address, wait a minute |
+| Login rejects the right password | Throttled after 5 failures, wait a minute |
 | Searches return nothing semantic | `embeddings` still downloading, check its logs |
-| Dashboard shows pages behind | Indexer catching up, or check `docker compose logs indexer` |
-| Tool calls fail with a 401 | Token revoked or state file cleared, reconnect the client |
+| Dashboard shows pages behind | Indexer catching up, check `docker compose logs indexer` |
+| Tool calls fail with 401 | State file cleared or token changed, reconnect the client |
+| `pg_restore` complains about parameters | Client and server major versions differ, see the Dockerfile note |
 
 ---
 
@@ -658,16 +633,17 @@ a schema migration is not reversible by stopping the container.
 
 ```bash
 bun install
-bun test          # 127 tests
+bun test          # 131 tests
 bun run check     # typecheck, lint, test
 ```
 
 | Package | What it is |
 |---|---|
-| `packages/core` | Wiki.js client, Markdown chunking, search merge, config, activity log |
-| `packages/mcp` | MCP server, OAuth 2.1 authorization server, the tools |
-| `packages/indexer` | Sync loop, embeddings, Qdrant, internal search API |
+| `packages/core` | Wiki.js client, chunking, search merge, vectors, config, activity log |
+| `packages/mcp` | MCP server, OAuth authorization server, the tools |
+| `packages/indexer` | Sync loop, embeddings, vector writes, internal search API |
 | `packages/dashboard` | Metrics interface |
+| `docker/backup` | Backup and restore container |
 | `website/` | The one-page site |
 | `themes/wikijs/` | Optional Wiki.js CSS and JS for sortable tables and a collapsible outline |
 
@@ -683,6 +659,8 @@ Notes on how it fits together:
   order does not matter.
 - The dashboard is server-rendered HTML with inline SVG charts. No client
   JavaScript, no chart library, no build step.
+- The Postgres major version in compose must match the client in the backup
+  image, or `pg_dump` emits settings an older server rejects.
 
 ---
 

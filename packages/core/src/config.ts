@@ -66,11 +66,6 @@ const postgres = {
   athenaDb: z.string().default('athena'),
 }
 
-const qdrant = {
-  qdrantUrl: z.string().url().default('http://qdrant:6333'),
-  qdrantCollection: z.string().default('wiki_chunks'),
-}
-
 const embeddings = {
   embeddingsUrl: z.string().url().default('http://embeddings:80'),
   embeddingsModel: z.string().default('intfloat/multilingual-e5-small'),
@@ -95,7 +90,7 @@ export const mcpSchema = z.object({
 export const indexerSchema = z.object({
   ...base,
   ...wiki,
-  ...qdrant,
+  ...postgres,
   ...embeddings,
   stateDir: z.string().default('/app/state'),
   indexIntervalSeconds: z.coerce.number().int().nonnegative().default(300),
@@ -108,8 +103,8 @@ export const dashboardSchema = z.object({
   ...base,
   ...wiki,
   ...postgres,
-  ...qdrant,
   dashboardToken: secret('DASHBOARD_TOKEN'),
+  backupStatusPath: z.string().default('/app/backups/status.json'),
   indexerUrl: z.string().url().default('http://indexer:8081'),
   host: z.string().default('0.0.0.0'),
   port: z.coerce.number().int().positive().default(8082),

@@ -20,7 +20,9 @@ x-common: &common
 services:
   postgres:
     <<: *common
-    image: postgres:16-alpine
+    # Postgres with pgvector. The major version must match the client in the
+    # backup image, or pg_dump emits parameters the server cannot read.
+    image: pgvector/pgvector:pg17
     container_name: athena-postgres
     environment:
       <<: *common-env
@@ -34,24 +36,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-    networks: [athena]
-
-  qdrant:
-    <<: *common
-    image: qdrant/qdrant:v1.15.4
-    container_name: athena-qdrant
-    environment:
-      <<: *common-env
-      QDRANT__SERVICE__ENABLE_STATIC_CONTENT: 'false'
-    volumes:
-      - ${ATHENA_DATA_DIR:-./data}/qdrant:/qdrant/storage
-    healthcheck:
-      # The Qdrant image is distroless; its own binary is the only usable probe.
-      test: ['CMD', '/qdrant/qdrant', '--version']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
     networks: [athena]
 
   # Text Embeddings Inference. Runs the model out of process so the indexer
@@ -104,8 +88,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
-        condition: service_started
       embeddings:
         condition: service_started
     environment:
@@ -113,8 +95,6 @@ services:
       WIKI_URL: http://wikijs:3000
       WIKI_API_TOKEN: ${WIKI_API_TOKEN:?WIKI_API_TOKEN is required}
       WIKI_LOCALE: ${WIKI_LOCALE:-en}
-      QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-wiki_chunks}
       EMBEDDINGS_URL: http://embeddings:80
       EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}
       INDEX_INTERVAL_SECONDS: ${INDEX_INTERVAL_SECONDS:-300}
@@ -195,7 +175,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-wiki}
       ATHENA_DB: ${ATHENA_DB:-athena}
+      BACKUP_STATUS_PATH: /app/backups/status.json
       PORT: '8082'
+    volumes:
+      # Read-only: the dashboard reports on backups, it never writes them.
+      - ${ATHENA_DATA_DIR:-./data}/backups:/app/backups:ro
     ports:
       - '127.0.0.1:8082:8082'
     healthcheck:
@@ -204,6 +188,49 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    networks: [athena]
+
+  # Hourly pg_dump, verified, then pushed to any rclone destination.
+  # One dump is a complete backup: Wiki.js keeps pages, users, settings and
+  # uploaded files in Postgres, and Athena keeps the activity log and search
+  # vectors there too.
+  backup:
+    <<: *common
+    build:
+      context: ./docker/backup
+    image: athena-backup
+    container_name: athena-backup
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      BACKUP_CRON: ${BACKUP_CRON:-0 * * * *}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      BACKUP_KEEP_LOCAL_DAYS: ${BACKUP_KEEP_LOCAL_DAYS:-7}
+      BACKUP_KEEP_REMOTE_DAYS: ${BACKUP_KEEP_REMOTE_DAYS:-30}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiki}
+      ATHENA_DB: ${ATHENA_DB:-athena}
+      # rclone is configured entirely from the environment, so no credentials
+      # are written to disk anywhere.
+      RCLONE_CONFIG_S3_TYPE: ${RCLONE_CONFIG_S3_TYPE:-s3}
+      RCLONE_CONFIG_S3_PROVIDER: ${RCLONE_CONFIG_S3_PROVIDER:-}
+      RCLONE_CONFIG_S3_ACCESS_KEY_ID: ${RCLONE_CONFIG_S3_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_S3_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_S3_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_S3_REGION: ${RCLONE_CONFIG_S3_REGION:-}
+      RCLONE_CONFIG_S3_ENDPOINT: ${RCLONE_CONFIG_S3_ENDPOINT:-}
+      # Optional encryption wrapper. With this set, the destination only ever
+      # sees ciphertext.
+      RCLONE_CONFIG_CRYPT_TYPE: ${RCLONE_CONFIG_CRYPT_TYPE:-}
+      RCLONE_CONFIG_CRYPT_REMOTE: ${RCLONE_CONFIG_CRYPT_REMOTE:-}
+      RCLONE_CONFIG_CRYPT_PASSWORD: ${RCLONE_CONFIG_CRYPT_PASSWORD:-}
+      RCLONE_CONFIG_CRYPT_PASSWORD2: ${RCLONE_CONFIG_CRYPT_PASSWORD2:-}
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/backups:/backups
     networks: [athena]
 
 networks:

@@ -27,7 +27,7 @@ test('toOrigin normalises away the trailing slash', () => {
 describe('loadConfig', () => {
   const valid = {
     WIKI_API_TOKEN: 'token',
-    QDRANT_URL: 'http://qdrant:6333',
+    POSTGRES_PASSWORD: 'pw',
     INDEX_INTERVAL_SECONDS: '600',
   }
 

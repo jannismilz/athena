@@ -31,7 +31,7 @@ const log = createLogger('test', 'error')
 /**
  * Build an Indexer with fake collaborators. The class takes them via a private
  * constructor, so the test reaches in deliberately rather than standing up
- * Qdrant, Wiki.js and an embedding server.
+ * Postgres, Wiki.js and an embedding server.
  */
 function buildIndexer(): Indexer {
   const wiki = {
@@ -70,14 +70,12 @@ function buildIndexer(): Indexer {
       deletes.push(pageId)
     },
     deleteMissingPages: async () => 0,
-    stats: async () => ({ points: 0, pages: 0, vectorSize: 3 }),
-    ensureCollection: async () => ({ created: true, dimensionMismatch: false }),
-    recreateCollection: async () => {},
+    stats: async () => ({ chunks: 0, pages: 0 }),
+    ensureSchema: async () => ({ rebuilt: false }),
   }
 
   const config = {
     embeddingsModel: 'test-model',
-    qdrantCollection: 'test',
     chunkMaxChars: 1200,
     stateDir: dir,
   }

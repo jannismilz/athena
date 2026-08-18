@@ -12,32 +12,31 @@ import { buildApp } from './server.ts'
 const config = loadConfig(indexerSchema)
 const log = createLogger('indexer', config.logLevel)
 
-// Migrations run under an advisory lock, so it is safe for every service to
-// call this concurrently at boot.
+// Chunks and their vectors live in Postgres alongside the activity log, so the
+// indexer holds an open connection rather than opening one per pass.
 const dbOptions = {
-  host: process.env.POSTGRES_HOST ?? 'postgres',
-  port: Number(process.env.POSTGRES_PORT ?? 5432),
-  user: process.env.POSTGRES_USER ?? 'athena',
-  password: process.env.POSTGRES_PASSWORD ?? '',
-  database: process.env.ATHENA_DB ?? 'athena',
+  host: config.postgresHost,
+  port: config.postgresPort,
+  user: config.postgresUser,
+  password: config.postgresPassword,
+  database: config.athenaDb,
 }
 
-if (dbOptions.password) {
-  await ensureDatabase(dbOptions)
-  const sql = connect(dbOptions)
-  const applied = await migrate(sql)
-  if (applied.length) log.info('migrations applied', { applied })
-  await sql.end({ timeout: 5 })
-}
+await ensureDatabase(dbOptions)
+const sql = connect(dbOptions)
+
+// Migrations run under an advisory lock, so every service can call this at boot.
+const applied = await migrate(sql)
+if (applied.length) log.info('migrations applied', { applied })
 
 /**
- * Wiki.js, Qdrant and the embedding container all start alongside this one, so
+ * Wiki.js, Postgres and the embedding container all start alongside this one, so
  * the first few attempts are expected to fail. Retry rather than crash-loop.
  */
 async function startIndexer(): Promise<Indexer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await Indexer.create(config, log)
+      return await Indexer.create(config, sql, log)
     } catch (error) {
       const wait = Math.min(attempt * 5, 30)
       log.warn('startup failed, retrying', {
@@ -79,7 +78,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     log.info('shutting down', { signal })
     server.close(() => {
       indexer.close()
-      process.exit(0)
+      void sql.end({ timeout: 5 }).then(() => process.exit(0))
     })
   })
 }
