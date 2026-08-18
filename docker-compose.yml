@@ -1,0 +1,211 @@
+# Athena: the whole stack.
+#
+#   cp .env.example .env   # fill in every CHANGE_ME
+#   docker compose up -d
+#
+# Data lives under ${ATHENA_DATA_DIR} (./data by default) as bind mounts, so
+# it is visible on the host and trivially backed up. Only Wiki.js, the MCP
+# server and the dashboard bind a port, and all three bind to localhost only,
+# put a reverse proxy with TLS in front of them.
+
+name: athena
+
+x-common: &common
+  restart: unless-stopped
+  environment: &common-env
+    TZ: ${TZ:-UTC}
+    ATHENA_INSTANCE_NAME: ${ATHENA_INSTANCE_NAME:-Athena}
+    ATHENA_LOG_LEVEL: ${ATHENA_LOG_LEVEL:-info}
+
+services:
+  postgres:
+    <<: *common
+    image: postgres:16-alpine
+    container_name: athena-postgres
+    environment:
+      <<: *common-env
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-wiki}
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-athena} -d ${POSTGRES_DB:-wiki}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [athena]
+
+  qdrant:
+    <<: *common
+    image: qdrant/qdrant:v1.15.4
+    container_name: athena-qdrant
+    environment:
+      <<: *common-env
+      QDRANT__SERVICE__ENABLE_STATIC_CONTENT: 'false'
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/qdrant:/qdrant/storage
+    healthcheck:
+      # The Qdrant image is distroless; its own binary is the only usable probe.
+      test: ['CMD', '/qdrant/qdrant', '--version']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [athena]
+
+  # Text Embeddings Inference. Runs the model out of process so the indexer
+  # stays small and the model can be swapped here without a rebuild.
+  embeddings:
+    <<: *common
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    container_name: athena-embeddings
+    command: ['--model-id', '${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}', '--port', '80']
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/embeddings:/data
+    healthcheck:
+      test: ['CMD', '/bin/sh', '-c', 'exec 3<>/dev/tcp/127.0.0.1/80']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    networks: [athena]
+
+  wikijs:
+    <<: *common
+    image: ghcr.io/requarks/wiki:2
+    container_name: athena-wikijs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-athena}
+      DB_PASS: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-wiki}
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/wikijs/config:/wiki/config
+      - ${ATHENA_DATA_DIR:-./data}/wikijs/data:/wiki/data
+      - ${ATHENA_DATA_DIR:-./data}/wikijs/uploads:/wiki/data/uploads
+    ports:
+      - '127.0.0.1:3000:3000'
+    networks: [athena]
+
+  indexer:
+    <<: *common
+    build:
+      context: .
+      target: indexer
+    image: athena-indexer
+    container_name: athena-indexer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      embeddings:
+        condition: service_started
+    environment:
+      <<: *common-env
+      WIKI_URL: http://wikijs:3000
+      WIKI_API_TOKEN: ${WIKI_API_TOKEN:?WIKI_API_TOKEN is required}
+      WIKI_LOCALE: ${WIKI_LOCALE:-en}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-wiki_chunks}
+      EMBEDDINGS_URL: http://embeddings:80
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}
+      INDEX_INTERVAL_SECONDS: ${INDEX_INTERVAL_SECONDS:-300}
+      STATE_DIR: /app/state
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ATHENA_DB: ${ATHENA_DB:-athena}
+      PORT: '8081'
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/indexer:/app/state
+    healthcheck:
+      test: ['CMD', 'bun', '-e', 'await fetch("http://127.0.0.1:8081/health")']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks: [athena]
+
+  mcp:
+    <<: *common
+    build:
+      context: .
+      target: mcp
+    image: athena-mcp
+    container_name: athena-mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+      indexer:
+        condition: service_started
+    environment:
+      <<: *common-env
+      WIKI_URL: http://wikijs:3000
+      WIKI_API_TOKEN: ${WIKI_API_TOKEN}
+      WIKI_LOCALE: ${WIKI_LOCALE:-en}
+      INDEXER_URL: http://indexer:8081
+      MCP_TOKEN: ${MCP_TOKEN:?MCP_TOKEN is required}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
+      OAUTH_STATE_DIR: /app/state
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      ATHENA_DB: ${ATHENA_DB:-athena}
+      PORT: '8080'
+    volumes:
+      - ${ATHENA_DATA_DIR:-./data}/mcp:/app/state
+    ports:
+      - '127.0.0.1:8080:8080'
+    healthcheck:
+      test: ['CMD', 'bun', '-e', 'await fetch("http://127.0.0.1:8080/health")']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [athena]
+
+  dashboard:
+    <<: *common
+    build:
+      context: .
+      target: dashboard
+    image: athena-dashboard
+    container_name: athena-dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+      indexer:
+        condition: service_started
+    environment:
+      <<: *common-env
+      WIKI_URL: ${WIKI_PUBLIC_URL:-http://localhost:3000}
+      WIKI_API_TOKEN: ${WIKI_API_TOKEN}
+      INDEXER_URL: http://indexer:8081
+      DASHBOARD_TOKEN: ${DASHBOARD_TOKEN:?DASHBOARD_TOKEN is required}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-athena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-wiki}
+      ATHENA_DB: ${ATHENA_DB:-athena}
+      PORT: '8082'
+    ports:
+      - '127.0.0.1:8082:8082'
+    healthcheck:
+      test: ['CMD', 'bun', '-e', 'await fetch("http://127.0.0.1:8082/health")']
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [athena]
+
+networks:
+  athena:
+    name: athena

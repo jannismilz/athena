@@ -1,0 +1,109 @@
+/* ========================================================================== */
+/* Wiki.js Custom CSS - extern geladen                                        */
+/* ========================================================================== */
+
+/* Page author card, previously hidden with:
+div.page-author-card {
+  display: none !important;
+}
+*/
+
+/* Hide the Wiki.js page header title. The # heading in the Markdown stays. */
+.page-header-headings .headline {
+  display: none !important;
+}
+
+.page-header-headings {
+  min-height: 0 !important;
+}
+
+.page-header-section {
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+/* ========================================================================== */
+/* Table styling and sort icons                                           */
+/* ========================================================================== */
+
+/* Make table headers clickable */
+.contents table thead th {
+  cursor: pointer;
+  text-decoration: underline;
+  position: relative;
+  padding-right: 22px; /* room for the sort icon */
+}
+
+/* Neutral sort icon, meaning unsorted */
+.contents table thead th::after {
+  content: "⇅";
+  font-size: 14px;
+  font-weight: bold;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.4;
+  color: #555;
+}
+
+/* Sorted ascending */
+.contents table thead th.sorted-asc::after {
+  content: "▲";
+  opacity: 1;
+  color: #1e88e5;
+}
+
+/* Sorted descending */
+.contents table thead th.sorted-desc::after {
+  content: "▼";
+  opacity: 1;
+  color: #1e88e5;
+}
+
+/* ========================================================================== */
+/* Table row styling                                                     */
+/* ========================================================================== */
+
+/* Alternating row colours */
+.contents table tbody tr:nth-child(odd) {
+  background-color: #f5f5f5;
+}
+
+.contents table tbody tr:nth-child(even) {
+  background-color: #ffffff;
+}
+
+/* Hover effect */
+.contents table tbody tr:hover {
+  background-color: #e3f2fd;
+}
+
+
+/* ========================================================================== */
+/* Sidebar                                                               */
+/* ========================================================================== */
+
+/* TOC-Header klickbar machen */
+.page-toc-card .overline {
+  cursor: pointer;
+}
+
+/* Eingeklappter Zustand: nur Header sichtbar, Liste ausgeblendet */
+.page-toc-card.athena-collapsed .v-list {
+  display: none;
+}
+
+/* Sidebar comment box. Discussion stays in the footer at #discussion. */
+.page-comments-card {
+  display: none !important;
+}
+
+/* Share and print in the sidebar */
+.page-shortcuts-card {
+  display: none !important;
+}
+
+.nav-header .athena-header-print {
+  height: 64px;
+}

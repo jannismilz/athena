@@ -1,0 +1,15 @@
+{
+  "name": "@athena/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@athena/core": "workspace:*",
+    "express": "^5.2.1",
+    "zod": "^3.25.0"
+  }
+}

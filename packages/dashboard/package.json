@@ -1,0 +1,16 @@
+{
+  "name": "@athena/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts",
+    "preview": "bun src/preview.ts > preview.html && echo wrote preview.html"
+  },
+  "dependencies": {
+    "@athena/core": "workspace:*",
+    "express": "^5.2.1",
+    "zod": "^3.25.0"
+  }
+}

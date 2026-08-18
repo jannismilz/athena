@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Athena, a personal wiki your AI writes to</title>
+<meta name="description" content="Athena connects Claude, ChatGPT or Cursor to your own Wiki.js. Your assistant searches it, reads it, and files notes and conversations back into it as plain Markdown pages. Self-hosted, Apache-2.0.">
+<meta property="og:title" content="Athena, a personal wiki your AI writes to">
+<meta property="og:description" content="Self-hosted. Your assistant searches, reads and writes your wiki. Every page is plain Markdown you keep.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='27'>%F0%9F%A6%89</text></svg>">
+
+<style>
+/* ---------------------------------------------------------------------------
+   Tokens. Light is the base set. Dark is redefined twice on purpose: once for
+   the OS preference (guarded so an explicit light choice still wins) and once
+   for an explicit dark choice. No component reads a colour from inside a media
+   block.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  --paper:      #f3f4f1;
+  --raised:     #fbfbfa;
+  --sunken:     #eaece7;
+  --ink:        #141715;
+  --ink-2:      #565d58;
+  --ink-3:      #858c86;
+  --rule:       #d9dcd6;
+  --rule-firm:  #c2c7bf;
+
+  --accent:     #146b5c;
+  --accent-ink: #0e5348;
+  --accent-wash:#e2ece8;
+  --on-accent:  #fbfbfa;
+
+  --shadow: 0 1px 2px rgb(20 23 21 / 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper:      #101210;
+    --raised:     #181b19;
+    --sunken:     #0a0c0a;
+    --ink:        #e9ece8;
+    --ink-2:      #a3ada6;
+    --ink-3:      #6f7a73;
+    --rule:       #262a27;
+    --rule-firm:  #363c38;
+    --accent:     #45a894;
+    --accent-ink: #63c0ad;
+    --accent-wash:#132a26;
+    --on-accent:  #071009;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:      #101210;
+  --raised:     #181b19;
+  --sunken:     #0a0c0a;
+  --ink:        #e9ece8;
+  --ink-2:      #a3ada6;
+  --ink-3:      #6f7a73;
+  --rule:       #262a27;
+  --rule-firm:  #363c38;
+  --accent:     #45a894;
+  --accent-ink: #63c0ad;
+  --accent-wash:#132a26;
+  --on-accent:  #071009;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+
+/* Display and data are monospace: the subject's raw material is paths and
+   Markdown. Running text is a serif, so the page reads as a document. */
+:root {
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Mono",
+          "JetBrains Mono", Menlo, Consolas, monospace;
+  --serif: ui-serif, "Iowan Old Style", "Source Serif 4", Charter, Georgia,
+           "Times New Roman", serif;
+
+  --step--1: 0.8125rem;
+  --step-0:  1.0625rem;
+  --step-1:  1.25rem;
+  --step-2:  1.5625rem;
+  --step-3:  2rem;
+  --step-4:  clamp(2.25rem, 1.4rem + 3.6vw, 3.5rem);
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: var(--step-0);
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:where(a) { color: var(--accent-ink); }
+:where(a):hover { color: var(--accent); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* --- Shell ----------------------------------------------------------------
+   One reading column. On wide screens a sticky rail on the left renders this
+   page's own sections as a wiki-style path tree. */
+.shell {
+  --gutter: clamp(1.15rem, 4vw, 2.5rem);
+  max-width: 78rem;
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+}
+
+.layout { display: block; }
+
+@media (min-width: 62rem) {
+  .layout {
+    display: grid;
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: start;
+  }
+}
+
+.column { min-width: 0; max-width: 44rem; }
+
+/* --- Path rail ------------------------------------------------------------ */
+.rail { display: none; }
+
+@media (min-width: 62rem) {
+  .rail {
+    display: block;
+    position: sticky;
+    top: 5.5rem;
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    line-height: 1.9;
+  }
+  .rail-title {
+    font-size: 0.6875rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 0.6rem;
+    margin-bottom: 0.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.1rem; }
+  .rail a {
+    color: var(--ink-2);
+    text-decoration: none;
+    display: block;
+    padding: 0.1rem 0;
+  }
+  .rail a::before { content: "/"; color: var(--ink-3); margin-right: 0.15em; }
+  .rail a:hover { color: var(--accent); }
+  .rail li + li a { padding-left: 0.9rem; }
+}
+
+/* --- Masthead ------------------------------------------------------------- */
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+  backdrop-filter: saturate(1.4) blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+.masthead-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: 3.5rem;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+.wordmark .mark {
+  font-size: 1.0625rem;
+  line-height: 1;
+  /* Emoji rendering varies; a fixed box keeps the wordmark from shifting. */
+  width: 1.15em;
+  text-align: center;
+}
+.masthead nav {
+  display: flex;
+  gap: clamp(0.9rem, 2.4vw, 1.75rem);
+  font-family: var(--mono);
+  font-size: var(--step--1);
+}
+.masthead nav a { color: var(--ink-2); text-decoration: none; }
+.masthead nav a:hover { color: var(--accent); }
+
+/* --- Sections ------------------------------------------------------------- */
+.band { border-top: 1px solid var(--rule); }
+.band:first-of-type { border-top: 0; }
+
+.section { padding-block: clamp(3rem, 7vw, 5rem); }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  margin: 0 0 0.9rem;
+}
+
+h1, h2, h3 {
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0;
+}
+h1 { font-size: var(--step-4); line-height: 1.04; letter-spacing: -0.035em; }
+h2 { font-size: var(--step-2); line-height: 1.2; margin-bottom: 0.6rem; }
+h3 { font-size: var(--step-0); line-height: 1.35; letter-spacing: -0.01em; }
+
+p { margin: 0 0 1.1rem; max-width: 65ch; }
+p:last-child { margin-bottom: 0; }
+
+.lede {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 54ch;
+}
+.note { color: var(--ink-2); max-width: 62ch; }
+
+/* --- Hero ----------------------------------------------------------------- */
+.hero { padding-block: clamp(3.25rem, 8vw, 6rem) clamp(2.5rem, 6vw, 4rem); }
+.hero h1 { margin-bottom: 1.4rem; max-width: 17ch; }
+.hero .lede { margin-bottom: 2rem; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.btn {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.02em;
+  padding: 0.6rem 1.05rem;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.btn-solid { background: var(--accent); color: var(--on-accent); }
+.btn-solid:hover { background: var(--accent-ink); color: var(--on-accent); }
+.btn-line { border-color: var(--rule-firm); color: var(--ink); }
+.btn-line:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- Transformation panel: a conversation becoming a filed page ----------- */
+.transform {
+  margin-top: clamp(2.5rem, 6vw, 3.5rem);
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--raised);
+  box-shadow: var(--shadow);
+}
+@media (min-width: 46rem) {
+  .transform { grid-template-columns: 1fr 1fr; }
+}
+.panel { padding: 1.15rem 1.25rem 1.35rem; min-width: 0; }
+.panel + .panel { border-top: 1px solid var(--rule); }
+@media (min-width: 46rem) {
+  .panel + .panel { border-top: 0; border-left: 1px solid var(--rule); }
+}
+.panel-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.85rem;
+}
+.turn { font-family: var(--serif); font-size: var(--step--1); line-height: 1.55; margin-bottom: 0.75rem; }
+.turn:last-child { margin-bottom: 0; }
+.turn b {
+  display: block;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.15rem;
+}
+.doc { font-family: var(--mono); font-size: var(--step--1); line-height: 1.7; }
+.doc .path { color: var(--accent-ink); word-break: break-all; }
+.doc .h1 { font-weight: 600; margin-top: 0.5rem; }
+.doc .h2 { color: var(--ink-2); margin-top: 0.35rem; }
+.doc .h2::before { content: "## "; color: var(--ink-3); }
+.doc .h1::before { content: "# "; color: var(--ink-3); }
+.doc .body { font-family: var(--serif); color: var(--ink-2); margin: 0.45rem 0 0.7rem; }
+.doc .stamp {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.5rem;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+}
+
+/* --- Cards ---------------------------------------------------------------- */
+.cards {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 34rem) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 62rem) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.card {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.1rem 1.15rem 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+.card h3 { color: var(--ink); }
+.card p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  line-height: 1.6;
+  max-width: none;
+}
+.card-index {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+
+/* --- Diagram -------------------------------------------------------------- */
+.figure { margin: 0; }
+.figure-frame {
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  background: var(--raised);
+  padding: clamp(1rem, 3vw, 1.75rem);
+  overflow-x: auto;
+}
+.figure svg { display: block; width: 100%; min-width: 34rem; height: auto; }
+.figure figcaption {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-3);
+  margin-top: 0.8rem;
+}
+.d-node { fill: var(--sunken); stroke: var(--rule-firm); }
+.d-node-key { fill: var(--accent-wash); stroke: var(--accent); }
+.d-name { fill: var(--ink); font: 600 13px var(--mono); }
+.d-sub { fill: var(--ink-3); font: 11px var(--mono); }
+.d-edge { stroke: var(--rule-firm); stroke-width: 1.25; fill: none; }
+.d-edge-write { stroke: var(--accent); stroke-width: 1.25; fill: none; }
+.d-tag { fill: var(--ink-2); font: 11px var(--mono); }
+.d-tag-write { fill: var(--accent-ink); font: 11px var(--mono); }
+
+/* --- Table ---------------------------------------------------------------- */
+.table-wrap { overflow-x: auto; border-top: 1px solid var(--rule); }
+table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+th {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.85rem 1.25rem 0.85rem 0;
+  border-bottom: 1px solid var(--rule-firm);
+  white-space: nowrap;
+}
+td {
+  padding: 0.7rem 1.25rem 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  vertical-align: top;
+}
+td:first-child {
+  font-family: var(--mono);
+  color: var(--ink);
+  white-space: nowrap;
+  font-size: 0.8125rem;
+}
+tr:last-child td { border-bottom: 0; }
+
+/* --- Code ----------------------------------------------------------------- */
+pre {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  margin: 0;
+  color: var(--ink);
+}
+pre .cm { color: var(--ink-3); }
+code { font-family: var(--mono); font-size: 0.9em; }
+p code, td code, li code {
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.05em 0.32em;
+}
+
+/* --- Steps: a real sequence, so they are numbered ------------------------- */
+.steps { list-style: none; counter-reset: s; margin: 0 0 1.75rem; padding: 0; display: grid; gap: 0; }
+.steps li {
+  counter-increment: s;
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  gap: 0 0.85rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--rule);
+  align-items: baseline;
+}
+.steps li:last-child { border-bottom: 1px solid var(--rule); }
+.steps li::before {
+  content: counter(s, decimal-leading-zero);
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--accent-ink);
+}
+.steps h3 { margin-bottom: 0.15rem; }
+.steps p { margin: 0; color: var(--ink-2); font-size: var(--step--1); }
+
+/* --- Footer --------------------------------------------------------------- */
+.colophon {
+  border-top: 1px solid var(--rule);
+  padding-block: 2.25rem 3rem;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.75rem;
+  justify-content: space-between;
+}
+.colophon a { color: var(--ink-2); text-decoration: none; }
+.colophon a:hover { color: var(--accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .transform { animation: settle 0.5s ease-out both; }
+  @keyframes settle {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="shell masthead-inner">
+    <a class="wordmark" href="#top">
+      <span class="mark" aria-hidden="true">&#129417;</span>
+      Athena
+    </a>
+    <nav>
+      <a href="#mechanism">Mechanism</a>
+      <a href="#tools">Tools</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/jannismilz/athena">Source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="shell" id="top">
+<div class="layout">
+
+  <aside class="rail" aria-label="On this page">
+    <div class="rail-title">This page</div>
+    <ol>
+      <li><a href="#top">athena</a></li>
+      <li><a href="#properties">properties</a></li>
+      <li><a href="#mechanism">mechanism</a></li>
+      <li><a href="#tools">tools</a></li>
+      <li><a href="#install">install</a></li>
+    </ol>
+  </aside>
+
+  <main class="column">
+
+    <section class="hero">
+      <p class="eyebrow">Self-hosted · Apache-2.0</p>
+      <h1>A personal wiki your AI writes to.</h1>
+      <p class="lede">
+        Athena connects Claude, ChatGPT or Cursor to your own Wiki.js. Your assistant
+        searches it, reads it, and files what you tell it back into it as plain
+        Markdown pages you can browse and edit yourself.
+      </p>
+      <div class="actions">
+        <a class="btn btn-solid" href="#install">Install it</a>
+        <a class="btn btn-line" href="https://github.com/jannismilz/athena">Read the source</a>
+      </div>
+
+      <div class="transform">
+        <div class="panel">
+          <div class="panel-label">What you said</div>
+          <p class="turn"><b>You</b>We are keeping staging on the smaller instance until Q3, to save budget for the migration.</p>
+          <p class="turn"><b>Assistant</b>There is already an infrastructure page with a Decisions section, so I added it there instead of rewriting the page.</p>
+        </div>
+        <div class="panel">
+          <div class="panel-label">What is now in your wiki</div>
+          <div class="doc">
+            <div class="path">projects/infrastructure</div>
+            <div class="h1">Infrastructure</div>
+            <div class="h2">Decisions</div>
+            <p class="body">Staging stays on the smaller instance until Q3, to keep budget available for the migration.</p>
+            <div class="stamp">created: you, 2026-03-04 09:12<br>updated: Assistant, 2026-08-18 14:03</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band section" id="properties">
+      <p class="eyebrow">Properties</p>
+      <h2>What you actually get</h2>
+      <p class="note">
+        Most AI memory is a store you cannot open. This one is a wiki, and Wiki.js stays
+        the source of truth for every page.
+      </p>
+
+      <div class="cards">
+        <article class="card">
+          <h3>Two kinds of search</h3>
+          <p>Exact terms go to the full-text index, vague questions go to the vector index,
+             and the two lists are fused by reciprocal rank. Neither source can bury the
+             other's hits.</p>
+        </article>
+        <article class="card">
+          <h3>Structure survives chunking</h3>
+          <p>A chunk records the headings above it, so what comes back still knows it lives
+             under <code>Kubernetes &gt; Network &gt; DNS</code>.</p>
+        </article>
+        <article class="card">
+          <h3>Visible provenance</h3>
+          <p>Every page an assistant touches is stamped with which one it was and when. The
+             name comes from the authenticated client, never from what the model says about
+             itself.</p>
+        </article>
+        <article class="card">
+          <h3>Appends, not rewrites</h3>
+          <p>Adding one fact costs a paragraph rather than a regeneration of the whole
+             document, so the rest of the page stays exactly as you wrote it.</p>
+        </article>
+        <article class="card">
+          <h3>A dashboard with an opinion</h3>
+          <p>Past the page counts it lists the searches that returned nothing. Each one is a
+             question your wiki could not answer yet.</p>
+        </article>
+        <article class="card">
+          <h3>Nothing to escape from</h3>
+          <p>Plain Markdown in Postgres, self-hosted, Apache-2.0. Wiki.js can mirror every
+             page to Git continuously. Walk away whenever you want.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band section" id="mechanism">
+      <p class="eyebrow">Mechanism</p>
+      <h2>How it fits together</h2>
+      <p class="note">
+        One MCP endpoint in front of Wiki.js. Reads consult both indexes. Writes land in
+        Wiki.js first and are re-indexed afterwards.
+      </p>
+
+      <figure class="figure">
+        <div class="figure-frame">
+          <svg viewBox="0 0 788 300" role="img"
+               aria-label="Your AI client speaks MCP to athena-mcp. That server reads from and writes to Wiki.js. Saved pages go to athena-indexer, which chunks and embeds them into Qdrant, and Qdrant returns semantic hits to athena-mcp.">
+            <defs>
+              <marker id="tip" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M0 0 L8 4 L0 8 Z" fill="var(--rule-firm)"></path>
+              </marker>
+              <marker id="tipw" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M0 0 L8 4 L0 8 Z" fill="var(--accent)"></path>
+              </marker>
+            </defs>
+
+            <!-- Top row: client, mcp, wiki -->
+            <rect class="d-node" x="0" y="26" width="176" height="56" rx="3"></rect>
+            <text class="d-name" x="88" y="50" text-anchor="middle">your AI client</text>
+            <text class="d-sub"  x="88" y="67" text-anchor="middle">Claude, ChatGPT, Cursor</text>
+
+            <rect class="d-node-key" x="306" y="26" width="176" height="56" rx="3"></rect>
+            <text class="d-name" x="394" y="50" text-anchor="middle">athena-mcp</text>
+            <text class="d-sub"  x="394" y="67" text-anchor="middle">12 tools, OAuth 2.1</text>
+
+            <rect class="d-node" x="612" y="26" width="176" height="56" rx="3"></rect>
+            <text class="d-name" x="700" y="50" text-anchor="middle">Wiki.js</text>
+            <text class="d-sub"  x="700" y="67" text-anchor="middle">source of truth</text>
+
+            <!-- Bottom row: qdrant, indexer -->
+            <rect class="d-node" x="306" y="196" width="176" height="56" rx="3"></rect>
+            <text class="d-name" x="394" y="220" text-anchor="middle">Qdrant</text>
+            <text class="d-sub"  x="394" y="237" text-anchor="middle">meaning, rebuildable</text>
+
+            <rect class="d-node" x="612" y="196" width="176" height="56" rx="3"></rect>
+            <text class="d-name" x="700" y="220" text-anchor="middle">athena-indexer</text>
+            <text class="d-sub"  x="700" y="237" text-anchor="middle">chunk, embed</text>
+
+            <!-- client -> mcp -->
+            <path class="d-edge" d="M176 54 L298 54" marker-end="url(#tip)"></path>
+            <text class="d-tag" x="237" y="45" text-anchor="middle">MCP / HTTPS</text>
+
+            <!-- mcp -> wiki -->
+            <path class="d-edge-write" d="M482 54 L604 54" marker-end="url(#tipw)"></path>
+            <text class="d-tag-write" x="543" y="45" text-anchor="middle">read, write</text>
+
+            <!-- wiki -> indexer -->
+            <path class="d-edge-write" d="M700 82 L700 188" marker-end="url(#tipw)"></path>
+            <text class="d-tag-write" x="710" y="139">page saved</text>
+
+            <!-- indexer -> qdrant -->
+            <path class="d-edge-write" d="M612 224 L490 224" marker-end="url(#tipw)"></path>
+            <text class="d-tag-write" x="551" y="215" text-anchor="middle">embed</text>
+
+            <!-- qdrant -> mcp -->
+            <path class="d-edge" d="M394 196 L394 90" marker-end="url(#tip)"></path>
+            <text class="d-tag" x="384" y="147" text-anchor="end">semantic hits</text>
+
+            <line x1="0" y1="276" x2="788" y2="276" stroke="var(--rule)"></line>
+            <text class="d-sub" x="0" y="294">Qdrant is discovery only. Delete it and the indexer rebuilds it from the wiki.</text>
+          </svg>
+        </div>
+        <figcaption>Your Wiki.js token and database credentials never leave the server.</figcaption>
+      </figure>
+    </section>
+
+    <section class="band section" id="tools">
+      <p class="eyebrow">Interface</p>
+      <h2>The tools your assistant gets</h2>
+      <p class="note">
+        Reading and writing are both first-class, which is what lets the wiki grow through
+        use instead of going stale.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Tool</th><th scope="col">What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>search_knowledge</td><td>Keyword and semantic search, fused into one ranked list</td></tr>
+            <tr><td>get_page</td><td>Full Markdown of a page, which is the authoritative text</td></tr>
+            <tr><td>get_page_structure</td><td>Heading outline without the body, for deciding where things belong</td></tr>
+            <tr><td>append_to_page</td><td>Add under a heading and leave the rest of the page alone</td></tr>
+            <tr><td>create_page</td><td>Start a new page</td></tr>
+            <tr><td>update_page</td><td>Replace a page body</td></tr>
+            <tr><td>move_page</td><td>Move or rename</td></tr>
+            <tr><td>delete_page</td><td>Delete, and drop it from the index</td></tr>
+            <tr><td>save_conversation</td><td>File a conversation under <code>conversations/YYYY/MM/</code></td></tr>
+            <tr><td>capture_note</td><td>Quick note into <code>inbox/</code> to file later</td></tr>
+            <tr><td>list_pages</td><td>Everything, with paths and timestamps</td></tr>
+            <tr><td>get_wiki_stats</td><td>Size, shape and staleness, so it can answer what is missing</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="band section" id="install">
+      <p class="eyebrow">Install</p>
+      <h2>Running it yourself</h2>
+      <p class="note">
+        Docker, a domain with TLS if you want Claude.ai to reach it, and about ten minutes.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Bring the stack up</h3>
+            <p>Postgres, Qdrant, Wiki.js, the embedding model and the three Athena services.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Set up Wiki.js</h3>
+            <p>Run the setup wizard on port 3000. This is your wiki and Athena never replaces it.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Create an API token</h3>
+            <p>Administration, then API. Copy the token into <code>.env</code> and restart.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Connect your assistant</h3>
+            <p>Add the MCP URL as a custom connector in Claude, or a bearer header in Cursor.
+               Claude registers itself and you approve once with a password.</p>
+          </div>
+        </li>
+      </ol>
+
+      <pre><span class="cm"># clone, configure, run</span>
+git clone https://github.com/jannismilz/athena.git
+cd athena
+cp .env.example .env
+<span class="cm"># fill in every CHANGE_ME, generate secrets with openssl rand -hex 32</span>
+docker compose up -d</pre>
+
+      <p class="note" style="margin-top:1.5rem">
+        Backups are one <code>pg_dump</code>. Wiki.js keeps pages, users, settings and
+        uploaded files in Postgres, so a single dump captures all of it.
+      </p>
+
+      <div class="actions" style="margin-top:1.75rem">
+        <a class="btn btn-solid" href="https://github.com/jannismilz/athena">Full setup on GitHub</a>
+      </div>
+    </section>
+
+    <footer class="colophon">
+      <span>Athena. Apache-2.0.</span>
+      <span>Built on <a href="https://js.wiki">Wiki.js</a> and <a href="https://qdrant.tech">Qdrant</a>.</span>
+      <span><a href="https://github.com/jannismilz/athena">github.com/jannismilz/athena</a></span>
+    </footer>
+
+  </main>
+</div>
+</div>
+
+</body>
+</html>

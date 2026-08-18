@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+.env
+.env.local
+
+data/
+*.dump
+*.sqlite
+*.sqlite-*
+_import/
+
+.DS_Store
