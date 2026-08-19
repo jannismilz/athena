@@ -241,7 +241,12 @@ export class AthenaOAuthProvider implements OAuthServerProvider {
       clientId: entry.client.client_id,
       codeChallenge: entry.params.codeChallenge,
       redirectUri: entry.params.redirectUri,
-      scopes: entry.params.scopes ?? SCOPES,
+      // A client that asks for no scope gets the default one. The SDK passes an
+      // empty array rather than undefined here, which `??` does not catch, and
+      // a token with no scopes is rejected by the MCP endpoint as
+      // "insufficient_scope". The client then reports that no MCP server could
+      // be found, which is a confusing way to say "your token is unusable".
+      scopes: entry.params.scopes?.length ? entry.params.scopes : SCOPES,
       resource: entry.params.resource?.href,
       expiresAt: Date.now() + AUTH_CODE_TTL_MS,
     })

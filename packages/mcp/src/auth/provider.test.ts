@@ -242,3 +242,32 @@ describe('client registration limits', () => {
     expect(await provider.clientsStore.getClient('client-1')).toBeDefined()
   })
 })
+
+describe('scopes', () => {
+  // A client that requests no scope must still get a usable token. The SDK
+  // passes an empty array rather than undefined, and a token with no scopes is
+  // rejected by the MCP endpoint as "insufficient_scope", which the client
+  // reports as "no MCP server was found at the provided URL".
+  test('a request with no scope is granted the default one', async () => {
+    const c = client('client-1')
+    await provider.clientsStore.registerClient!(c)
+    const { res, captured } = fakeRes()
+    await provider.authorize(c, { ...params(), scopes: [] }, res)
+    const sid = new URL(captured.location!).searchParams.get('sid')!
+    const code = new URL(provider.completeLogin(sid)).searchParams.get('code')!
+
+    const tokens = await provider.exchangeAuthorizationCode(c, code)
+    expect(tokens.scope).toBe('wiki')
+    expect((await provider.verifyAccessToken(tokens.access_token)).scopes).toEqual(['wiki'])
+  })
+
+  test('an explicitly requested scope is preserved', async () => {
+    const c = client('client-2')
+    await provider.clientsStore.registerClient!(c)
+    const { res, captured } = fakeRes()
+    await provider.authorize(c, { ...params(), scopes: ['wiki'] }, res)
+    const sid = new URL(captured.location!).searchParams.get('sid')!
+    const code = new URL(provider.completeLogin(sid)).searchParams.get('code')!
+    expect((await provider.exchangeAuthorizationCode(c, code)).scope).toBe('wiki')
+  })
+})

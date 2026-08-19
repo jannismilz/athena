@@ -52,10 +52,18 @@ export async function ensureDatabase(options: DbOptions): Promise<void> {
     onnotice: () => {},
   })
   try {
+    // Check first. Attempting the create unconditionally works, but Postgres
+    // logs a server-side ERROR every time the database already exists, which
+    // is every boot after the first.
+    const [existing] = await admin`SELECT 1 FROM pg_database WHERE datname = ${options.database}`
+    if (existing) return
+
     await admin.unsafe(`CREATE DATABASE "${options.database.replace(/"/g, '""')}"`)
   } catch (error) {
+    // The check above removes the common case, but two services can still pass
+    // it at the same moment, so the race is still handled.
     // 42P04: database already exists.
-    // 23505: another service won the same race a moment earlier.
+    // 23505: another service won the race a moment earlier.
     const code = (error as { code?: string })?.code
     if (code !== '42P04' && code !== '23505') throw error
   } finally {

@@ -18,6 +18,7 @@ x-common: &common
     TZ: ${TZ:-UTC}
     ATHENA_INSTANCE_NAME: ${ATHENA_INSTANCE_NAME:-Athena}
     ATHENA_LOG_LEVEL: ${ATHENA_LOG_LEVEL:-info}
+    TRUST_PROXY: ${TRUST_PROXY:-1}
 
 services:
   # Docker creates bind-mount directories as root, but every service runs as a

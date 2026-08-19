@@ -46,43 +46,6 @@ export function securityHeaders(options: SecurityHeaderOptions = {}) {
   }
 }
 
-/**
- * Reject cross-site form posts.
- *
- * The session cookie is SameSite=Strict, which already stops a third-party page
- * from posting with your credentials on every current browser. This is the
- * belt to that pair of braces, and it costs one header comparison: a form post
- * must come from this same host.
- */
-export function sameOriginOnly() {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (req.method !== 'POST') {
-      next()
-      return
-    }
-
-    const origin = req.get('origin')
-    const host = req.get('host')
-
-    // A same-origin form post from a browser sends Origin. Anything that sends
-    // one from somewhere else is cross-site and refused. Requests with no
-    // Origin at all are command-line clients, which carry no ambient cookies.
-    if (origin) {
-      let originHost = ''
-      try {
-        originHost = new URL(origin).host
-      } catch {
-        originHost = ''
-      }
-      if (!originHost || !host || originHost !== host) {
-        res.status(403).type('text/plain').send('Cross-site request refused.')
-        return
-      }
-    }
-    next()
-  }
-}
-
 /** Authenticated pages must never be cached by a proxy or written to disk. */
 export function noStore(res: Response): void {
   res.set('cache-control', 'no-store, no-cache, must-revalidate, private')

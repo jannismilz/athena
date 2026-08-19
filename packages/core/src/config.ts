@@ -47,6 +47,13 @@ export function toOrigin(raw: string): string {
 }
 
 const base = {
+  // How many reverse proxies sit in front. Express uses this to decide whether
+  // to believe X-Forwarded-For and X-Forwarded-Proto, which decide the address
+  // the throttles count against and whether the session cookie is marked
+  // Secure. One is right for the documented setups, where a single proxy is
+  // the only thing that can reach these containers. "loopback" only works when
+  // the proxy runs on the host rather than in a container.
+  trustProxy: z.string().default('1'),
   tz: z.string().default('UTC'),
   instanceName: z.string().default('Athena'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -112,8 +119,6 @@ export const indexerSchema = z.object({
 export const dashboardSchema = z.object({
   ...base,
   ...postgresLocation,
-  // Only a link target, so the dashboard can point at pages.
-  wikiUrl: z.string().url().default('http://wikijs:3000'),
   dashboardToken: secret('DASHBOARD_TOKEN'),
   dashboardDbPassword: secret('DASHBOARD_DB_PASSWORD'),
   backupStatusPath: z.string().default('/app/backups/status.json'),

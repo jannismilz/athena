@@ -519,7 +519,8 @@ There is nothing to do by hand on a new host.
 | `METRICS_CACHE_SECONDS` | `60` | How long dashboard figures are reused |
 | `EMBEDDINGS_MODEL` | `intfloat/multilingual-e5-small` | Changing it re-indexes everything |
 | `EMBEDDINGS_PROVIDER` | `tei` | `tei`, or `openai` for a compatible endpoint |
-| `INDEX_INTERVAL_SECONDS` | `300` | Full reconciliation interval |
+| `INDEX_INTERVAL_SECONDS` | `300` | Full reconciliation interval. Writes reindex immediately, so this only catches edits made in the Wiki.js UI |
+| `TRUST_PROXY` | `1` | Reverse proxy hops to believe. `1` suits a single proxy in front |
 | `CHUNK_MAX_CHARS` | `1200` | Chunk size ceiling |
 | `BACKUP_*` | see `.env.example` | Schedule, retention, rclone destination |
 
@@ -575,12 +576,17 @@ implements one:
 3. You type `MCP_TOKEN` as the password. That is the human approval step.
 4. Athena issues Claude tokens that Athena minted itself.
 
-Those tokens are written to `data/mcp/oauth-state.json`, **never to `.env`**.
-Revoke them with:
+Those tokens are written to **`oauth-state.json`**, never to `.env`. It lives
+at `/app/state/oauth-state.json` inside the container, which is
+`${ATHENA_DATA_DIR}/mcp/oauth-state.json` on the host. Revoke every issued
+token by deleting it:
 
 ```bash
-rm data/mcp/oauth-state.json && docker compose restart mcp
+docker compose exec mcp rm -f /app/state/oauth-state.json
+docker compose restart mcp
 ```
+
+Every client then has to connect again.
 
 If you never use browser Claude, ignore all of this. The bearer path does not
 touch it.

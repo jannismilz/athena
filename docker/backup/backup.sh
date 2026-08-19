@@ -70,6 +70,19 @@ mkdir -p "$WORK" "$LOCAL_DIR"
 # -Fc is the custom format: compressed, and restorable table by table.
 for DB in "${POSTGRES_DB:-wiki}" "${ATHENA_DB:-athena}"; do
   [ -n "$DB" ] || continue
+
+  # Athena's database is created by the services on their first start. A backup
+  # that fires before then, or while they are down, should skip it and still
+  # save the wiki rather than failing the whole run.
+  if ! PGPASSWORD="${POSTGRES_PASSWORD:-}" psql \
+       --host="$POSTGRES_HOST" --port="${POSTGRES_PORT:-5432}" \
+       --username="$POSTGRES_USER" --dbname=postgres --tuples-only --no-align \
+       --command="SELECT 1 FROM pg_database WHERE datname = '${DB}'" 2>/dev/null | grep -q 1
+  then
+    log "database ${DB} does not exist yet, skipping"
+    continue
+  fi
+
   log "dumping ${DB}"
   OUT="${WORK}/${DB}-${STAMP}.dump"
 

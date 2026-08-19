@@ -15,7 +15,6 @@ const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 console.log(
   renderDashboard({
     instanceName: 'Athena',
-    wikiUrl: 'https://wiki.example.com',
     days,
     generatedAt: new Date().toISOString(),
     content: {

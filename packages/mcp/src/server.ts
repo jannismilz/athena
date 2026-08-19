@@ -48,9 +48,10 @@ export async function buildApp(config: McpConfig, sql: Sql): Promise<Express> {
 
   const app = express()
   app.disable('x-powered-by')
-  // Trust only a proxy on loopback. With `true`, any client that reached the
-  // app directly could set X-Forwarded-For and evade the login throttle.
-  app.set('trust proxy', 'loopback')
+  // Believe X-Forwarded-* from the reverse proxy in front, so the login
+  // throttle counts the real client address rather than the proxy's. No port
+  // is published, so nothing else can reach this directly.
+  app.set('trust proxy', config.trustProxy)
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, service: 'mcp' })

@@ -23,7 +23,6 @@ import { STYLES } from './styles.ts'
 
 export type DashboardData = {
   instanceName: string
-  wikiUrl: string
   days: number
   content: ContentMetrics
   activity: ActivityMetrics
@@ -43,13 +42,7 @@ function tile(label: string, value: string, hint?: string, tone = 'neutral'): Ht
     </div>`
 }
 
-function pageLink(wikiUrl: string, row: PageRow): Html {
-  const href = `${wikiUrl.replace(/\/+$/, '')}/${row.path}`
-  return html`<a href="${href}" target="_blank" rel="noreferrer noopener">${row.title || row.path}</a>
-    <span class="path">${row.path}</span>`
-}
-
-function pageTable(wikiUrl: string, rows: PageRow[], numeric?: string): Html {
+function pageTable(rows: PageRow[], numeric?: string): Html {
   if (!rows.length) return html`<p class="empty">Nothing to show.</p>`
   return html`
     <div class="scroll">
@@ -65,7 +58,10 @@ function pageTable(wikiUrl: string, rows: PageRow[], numeric?: string): Html {
           ${rows.map(
             row => html`
               <tr>
-                <td>${pageLink(wikiUrl, row)}</td>
+                <td>
+                  ${row.title || row.path}
+                  <span class="path">${row.path}</span>
+                </td>
                 ${numeric ? html`<td class="num">${(row.words ?? 0).toLocaleString('en-US')}</td>` : null}
                 <td class="num age">${relativeAge(row.updatedAt)}</td>
               </tr>`,
@@ -120,10 +116,7 @@ export function renderDashboard(data: DashboardData): string {
       <header class="top">
         <div>
           <h1>${data.instanceName}</h1>
-          <div class="sub">
-            Generated ${relativeAge(data.generatedAt)} ·
-            <a href="${data.wikiUrl}" target="_blank" rel="noreferrer noopener">open the wiki</a>
-          </div>
+          <div class="sub">Generated ${relativeAge(data.generatedAt)}</div>
         </div>
         <nav class="range" aria-label="Time range">
           ${RANGES.map(
@@ -228,13 +221,13 @@ export function renderDashboard(data: DashboardData): string {
         <section class="card">
           <h2>Going stale</h2>
           <p class="note">Longest without an edit. Old is not always wrong, but it is worth a look.</p>
-          ${pageTable(data.wikiUrl, content.stale)}
+          ${pageTable(content.stale)}
         </section>
 
         <section class="card">
           <h2>Largest pages</h2>
           <p class="note">Candidates for splitting into their own topics.</p>
-          ${pageTable(data.wikiUrl, content.largest, 'Words')}
+          ${pageTable(content.largest, 'Words')}
         </section>
 
         <section class="card">

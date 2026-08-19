@@ -21,7 +21,6 @@ import {
   SESSION_COOKIE,
   SESSION_TTL_MS,
   type Sql,
-  sameOriginOnly,
   secretsEqual,
   securityHeaders,
   verifySession,
@@ -60,14 +59,14 @@ export function buildApp(
 ): Express {
   const app = express()
   app.disable('x-powered-by')
-  // Trust only a proxy on loopback, so a remote client cannot forge its address
-  // and slip past the throttle.
-  app.set('trust proxy', 'loopback')
+  // Believe X-Forwarded-* from the reverse proxy in front, so throttles count
+  // the real client address and the session cookie is marked Secure behind
+  // TLS. No port is published, so nothing else can reach this directly.
+  app.set('trust proxy', config.trustProxy)
 
   const throttle = new FailureThrottle({ maxFailures: 5 })
 
   app.use(securityHeaders({ contentSecurityPolicy: CSP }))
-  app.use(sameOriginOnly())
   app.use(express.urlencoded({ extended: false, limit: '4kb' }))
 
   // Liveness, before auth, so the container healthcheck needs no secret.
@@ -87,7 +86,6 @@ export function buildApp(
           action: 'login',
           purpose: PURPOSE,
           ...(error ? { error } : {}),
-          footer: `<a href="${config.wikiUrl}">Open the wiki</a>`,
         }),
       )
   }
@@ -214,7 +212,6 @@ export function buildApp(
         .send(
           renderDashboard({
             instanceName: config.instanceName,
-            wikiUrl: config.wikiUrl,
             days,
             ...data,
             generatedAt: new Date().toISOString(),

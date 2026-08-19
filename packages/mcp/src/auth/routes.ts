@@ -22,8 +22,10 @@ function sendPage(res: Response, html: string, status = 200): void {
       'cache-control': 'no-store',
       'x-frame-options': 'DENY',
       'referrer-policy': 'no-referrer',
-      'content-security-policy':
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'",
+      // No form-action here. It restricts where a submission may redirect to,
+      // and this form deliberately hands off to the AI client's callback URL,
+      // which is on another origin.
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'",
     })
     .send(html)
 }
@@ -108,7 +110,10 @@ export function loginRouter(provider: AthenaOAuthProvider, instanceName: string)
     }
 
     provider.clearFailures(ip)
-    res.redirect(302, provider.completeLogin(sid))
+    // 303, not 302: See Other is the one status that requires the client to
+    // follow up with GET. After a form post, a 302 leaves the method to the
+    // client and some repeat the POST against the callback URL.
+    res.redirect(303, provider.completeLogin(sid))
   })
 
   return router

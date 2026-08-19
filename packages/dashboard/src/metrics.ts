@@ -134,6 +134,12 @@ export async function contentMetrics(wikiSql: Sql, staleDays: number): Promise<C
   const cutoff = new Date(Date.now() - staleDays * DAY_MS).toISOString()
 
   try {
+    // Ask once whether Wiki.js has created its schema. Letting the four queries
+    // below fail instead would work, but each logs a server-side ERROR in
+    // Postgres on every dashboard load until the setup wizard has been run.
+    const [probe] = await wikiSql`SELECT to_regclass('public.pages') AS tbl`
+    if (!probe?.tbl) return EMPTY_CONTENT
+
     const [totals, areas, stale, largest] = await Promise.all([
       wikiSql`
         SELECT count(*)::int AS pages,
