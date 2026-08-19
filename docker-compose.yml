@@ -53,7 +53,7 @@ services:
   # endpoint instead and set EMBEDDINGS_PROVIDER=openai. See the README.
   embeddings:
     <<: *common
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.2.1
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     platform: linux/amd64
     command: ['--model-id', '${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}', '--port', '80']
     volumes:
