@@ -20,6 +20,31 @@ x-common: &common
     ATHENA_LOG_LEVEL: ${ATHENA_LOG_LEVEL:-info}
 
 services:
+  # Docker creates bind-mount directories as root, but every service runs as a
+  # non-root user, so each would fail to write to its own directory with
+  # "EACCES: permission denied". This one-shot container fixes ownership before
+  # anything else starts, so there is nothing to do by hand on a new host.
+  #
+  # The ids match the images: Wiki.js runs as node (1000), the Athena services
+  # as athena (10001), and the backup image as postgres (70). Postgres and the
+  # embedding model set up their own directories.
+  init:
+    image: alpine:3.22
+    network_mode: none
+    restart: "no"
+    volumes:
+      - ${ATHENA_DATA_DIR:-../data}:/data
+    command:
+      - sh
+      - -euc
+      - |
+        mkdir -p /data/wikijs/config /data/wikijs/data /data/wikijs/uploads \
+                 /data/mcp /data/indexer /data/backups /data/embeddings
+        chown -R 1000:1000   /data/wikijs
+        chown -R 10001:10001 /data/mcp /data/indexer
+        chown -R 70:70       /data/backups
+        echo "init: data directory ownership set"
+
   postgres:
     <<: *common
     # Postgres with pgvector. Keep this major version in step with the base
@@ -70,6 +95,8 @@ services:
     <<: *common
     image: ghcr.io/requarks/wiki:2
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
@@ -93,6 +120,8 @@ services:
       target: indexer
     image: athena-indexer
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       embeddings:
@@ -132,6 +161,8 @@ services:
       target: mcp
     image: athena-mcp
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       indexer:
@@ -169,6 +200,8 @@ services:
       target: dashboard
     image: athena-dashboard
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       indexer:
@@ -209,6 +242,8 @@ services:
       context: ./docker/backup
     image: athena-backup
     depends_on:
+      init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:

@@ -477,6 +477,7 @@ OpenAI or anyone else is ever stored in `.env`.
 
 | Service | Port | What it is |
 |---|---|---|
+| `init` | none | Runs once at startup to set data directory ownership, then exits |
 | `postgres` | internal | Wiki.js data, activity log, and vectors via pgvector |
 | `wikijs` | 3000 | The wiki you read and edit |
 | `embeddings` | internal | The embedding model, on CPU |
@@ -487,6 +488,13 @@ OpenAI or anyone else is ever stored in `.env`.
 
 There is no separate vector database. Vectors live in Postgres, so one backup
 covers everything.
+
+`init` exists because Docker creates bind-mount directories as `root`, while
+every service runs as a non-root user. Without it, Wiki.js fails with
+`EACCES: permission denied, mkdir '/wiki/data/cache'` and the MCP server,
+indexer and backup container fail the same way on their own directories. It
+runs before anything else, sets each directory to the right owner, and exits.
+There is nothing to do by hand on a new host.
 
 > **On ARM hosts** the embeddings image is published for `linux/amd64` only and
 > will not run natively. Point `EMBEDDINGS_PROVIDER=openai` at an
