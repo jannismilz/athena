@@ -50,20 +50,24 @@ function pageTable(rows: PageRow[], numeric?: string): Html {
         <thead>
           <tr>
             <th>Page</th>
-            ${numeric ? html`<th class="num">${numeric}</th>` : null}
-            <th class="num">Updated</th>
+            ${numeric ? html`<th class="num nowrap">${numeric}</th>` : null}
+            <th class="num nowrap">Updated</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(
             row => html`
               <tr>
-                <td>
+                <td class="clip">
                   ${row.title || row.path}
                   <span class="path">${row.path}</span>
                 </td>
-                ${numeric ? html`<td class="num">${(row.words ?? 0).toLocaleString('en-US')}</td>` : null}
-                <td class="num age">${relativeAge(row.updatedAt)}</td>
+                ${
+                  numeric
+                    ? html`<td class="num nowrap">${(row.words ?? 0).toLocaleString('en-US')}</td>`
+                    : null
+                }
+                <td class="num age nowrap">${relativeAge(row.updatedAt)}</td>
               </tr>`,
           )}
         </tbody>
@@ -77,15 +81,19 @@ function queryTable(rows: QueryRow[], emptyMessage: string): Html {
     <div class="scroll">
       <table>
         <thead>
-          <tr><th>Query</th><th class="num">Times</th><th class="num">Last</th></tr>
+          <tr>
+            <th>Query</th>
+            <th class="num nowrap">Times</th>
+            <th class="num nowrap">Last</th>
+          </tr>
         </thead>
         <tbody>
           ${rows.map(
             row => html`
               <tr>
-                <td>${row.query}</td>
-                <td class="num">${row.count}</td>
-                <td class="num age">${relativeAge(row.lastSeen)}</td>
+                <td class="clip">${row.query}</td>
+                <td class="num nowrap">${row.count}</td>
+                <td class="num age nowrap">${relativeAge(row.lastSeen)}</td>
               </tr>`,
           )}
         </tbody>
@@ -173,13 +181,13 @@ export function renderDashboard(data: DashboardData): string {
           ${columnChart(activity.callsPerDay)}
         </section>
 
-        <section class="card">
+        <section class="card wide">
           <h2>Which tools get used</h2>
           <p class="note">Reading and writing are both first-class; this is the actual mix.</p>
           ${barChart(activity.byTool.slice(0, 10))}
         </section>
 
-        <section class="card">
+        <section class="card wide">
           <h2>Which assistant</h2>
           <p class="note">Taken from the authenticated client, not from what the model claims.</p>
           ${barChart(activity.byActor.slice(0, 8), { series: 2 })}
