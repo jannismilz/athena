@@ -207,6 +207,10 @@ section.card .note {
 .chart .val {
   fill: var(--text); font: 600 12px var(--mono); font-variant-numeric: tabular-nums;
 }
+.chart-scroll { overflow-x: auto; }
+.chart .col-val {
+  fill: var(--text-2); font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
 .chart .tick { fill: var(--text-3); font: 11px var(--mono); font-variant-numeric: tabular-nums; }
 .chart g:hover .mark { filter: brightness(1.1); }
 
