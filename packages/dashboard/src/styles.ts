@@ -181,6 +181,15 @@ section.card {
   min-width: 0; box-shadow: var(--shadow);
 }
 section.card.wide { grid-column: 1 / -1; }
+
+/* Two cards that belong together, each taking half the full width. The grid
+   itself auto-fits, so a pair cannot be expressed as a column span; a row of
+   its own can. */
+.pair {
+  grid-column: 1 / -1;
+  display: grid; gap: .75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 section.card.notice { border-color: var(--warning); }
 section.card.notice h2 { color: var(--warning); }
 section.card h2 {
@@ -278,7 +287,7 @@ footer.foot {
 
 @media (max-width: 640px) {
   .wrap { padding: 1.25rem .875rem 3rem; }
-  .grid { grid-template-columns: 1fr; }
+  .grid, .pair { grid-template-columns: 1fr; }
   td.num, th.num { width: 4.5rem; }
 }
 `

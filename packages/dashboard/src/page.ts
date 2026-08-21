@@ -181,17 +181,19 @@ export function renderDashboard(data: DashboardData): string {
           ${columnChart(activity.callsPerDay)}
         </section>
 
-        <section class="card wide">
-          <h2>Which tools get used</h2>
-          <p class="note">Reading and writing are both first-class; this is the actual mix.</p>
-          ${barChart(activity.byTool.slice(0, 10))}
-        </section>
+        <div class="pair">
+          <section class="card">
+            <h2>Which tools get used</h2>
+            <p class="note">Reading and writing are both first-class; this is the actual mix.</p>
+            ${barChart(activity.byTool.slice(0, 10))}
+          </section>
 
-        <section class="card wide">
-          <h2>Which assistant</h2>
-          <p class="note">Taken from the authenticated client, not from what the model claims.</p>
-          ${barChart(activity.byActor.slice(0, 8), { series: 2 })}
-        </section>
+          <section class="card">
+            <h2>Which assistant</h2>
+            <p class="note">Taken from the authenticated client, not from what the model claims.</p>
+            ${barChart(activity.byActor.slice(0, 8), { series: 2 })}
+          </section>
+        </div>
 
         <section class="card wide">
           <h2>Searches that found nothing</h2>
