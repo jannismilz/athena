@@ -240,7 +240,7 @@ table {
   width: 100%; border-collapse: collapse; font-size: .8125rem;
   /* Fixed layout, plus an explicit width on the numeric columns, stops the
      browser giving them less room than their content needs. That is what let
-     "7 min ago" run into the value beside it. */
+     an age run into the value beside it. */
   table-layout: fixed;
 }
 th {
@@ -254,9 +254,22 @@ td {
   color: var(--text-2); vertical-align: top;
 }
 tr:last-child td { border-bottom: 0; }
+/* Compact counts and ages need little room, and every millimetre they give up
+   goes to the page or query beside them. */
 td.num, th.num {
   text-align: right; font-family: var(--mono);
-  font-variant-numeric: tabular-nums; padding-right: 0; width: 5.5rem;
+  font-variant-numeric: tabular-nums; padding-right: 0; width: 4rem;
+}
+
+/* Label and value rows, where the value is a name rather than a number. The
+   fixed numeric column would leave a model name nowhere to go, so this table
+   sizes itself and long values break instead of overflowing. */
+table.kv { table-layout: auto; }
+table.kv td:first-child { white-space: nowrap; padding-right: 1.5rem; }
+table.kv td.v {
+  text-align: right; font-family: var(--mono);
+  font-variant-numeric: tabular-nums; padding-right: 0;
+  overflow-wrap: anywhere; color: var(--text);
 }
 .nowrap { white-space: nowrap; }
 
@@ -288,6 +301,6 @@ footer.foot {
 @media (max-width: 640px) {
   .wrap { padding: 1.25rem .875rem 3rem; }
   .grid, .pair { grid-template-columns: 1fr; }
-  td.num, th.num { width: 4.5rem; }
+  td.num, th.num { width: 3.75rem; }
 }
 `

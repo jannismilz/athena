@@ -90,14 +90,28 @@ export function formatCount(value: number): string {
   return String(value)
 }
 
+/**
+ * Compact form for a table cell, where one decimal always survives.
+ *
+ * `formatCount` rounds hard above ten thousand because it feeds the big tiles,
+ * where "319k" reads better than "318.5k". In a column of page sizes the
+ * decimal is the whole point, so 14,220 words is 14.2k.
+ */
+export function formatCompact(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
+  return String(value)
+}
+
+/** Ages are read at a glance and share a column with numbers, so they stay tight. */
 export function relativeAge(iso: string | null): string {
   if (!iso) return 'never'
   const ms = Date.now() - Date.parse(iso)
   if (!Number.isFinite(ms)) return 'unknown'
   const hours = ms / 3_600_000
-  if (hours < 1) return `${Math.max(1, Math.round(ms / 60_000))} min ago`
-  if (hours < 48) return `${Math.round(hours)} h ago`
-  return `${Math.round(hours / 24)} d ago`
+  if (hours < 1) return `${Math.max(1, Math.round(ms / 60_000))}m`
+  if (hours < 48) return `${Math.round(hours)}h`
+  return `${Math.round(hours / 24)}d`
 }
 
 /**

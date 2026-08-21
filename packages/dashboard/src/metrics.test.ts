@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { contentMetrics, fillGaps, formatCount, relativeAge, toIso } from './metrics.ts'
+import {
+  contentMetrics,
+  fillGaps,
+  formatCompact,
+  formatCount,
+  relativeAge,
+  toIso,
+} from './metrics.ts'
 
 describe('formatCount', () => {
   test('abbreviates large numbers only', () => {
@@ -11,12 +18,21 @@ describe('formatCount', () => {
   })
 })
 
+describe('formatCompact', () => {
+  test('keeps one decimal so page sizes stay distinguishable', () => {
+    expect(formatCompact(999)).toBe('999')
+    expect(formatCompact(1500)).toBe('1.5k')
+    expect(formatCompact(14_220)).toBe('14.2k')
+    expect(formatCompact(2_500_000)).toBe('2.5M')
+  })
+})
+
 describe('relativeAge', () => {
   test('describes recent and distant times', () => {
     const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
-    expect(relativeAge(ago(120_000))).toBe('2 min ago')
-    expect(relativeAge(ago(5 * 3_600_000))).toBe('5 h ago')
-    expect(relativeAge(ago(3 * 86_400_000))).toBe('3 d ago')
+    expect(relativeAge(ago(120_000))).toBe('2m')
+    expect(relativeAge(ago(5 * 3_600_000))).toBe('5h')
+    expect(relativeAge(ago(3 * 86_400_000))).toBe('3d')
   })
 
   test('handles missing and unparseable values', () => {

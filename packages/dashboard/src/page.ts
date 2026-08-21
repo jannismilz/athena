@@ -13,6 +13,7 @@ import {
   type BackupStatus,
   type ContentMetrics,
   formatBytes,
+  formatCompact,
   formatCount,
   type IndexMetrics,
   type PageRow,
@@ -64,7 +65,7 @@ function pageTable(rows: PageRow[], numeric?: string): Html {
                 </td>
                 ${
                   numeric
-                    ? html`<td class="num nowrap">${(row.words ?? 0).toLocaleString('en-US')}</td>`
+                    ? html`<td class="num nowrap">${formatCompact(row.words ?? 0)}</td>`
                     : null
                 }
                 <td class="num age nowrap">${relativeAge(row.updatedAt)}</td>
@@ -240,36 +241,31 @@ export function renderDashboard(data: DashboardData): string {
           ${pageTable(content.largest, 'Words')}
         </section>
 
-        <section class="card">
+        <section class="card wide">
           <h2>Index health</h2>
           <p class="note">Search is derived from the wiki and can always be rebuilt.</p>
-          <div class="scroll">
-            <table>
-              <tbody>
-                <tr>
-                  <td>Status</td>
-                  <td class="num">
-                    <span class="status ${indexTone}"
-                      >${index.reachable ? 'reachable' : 'unreachable'}</span>
-                  </td>
-                </tr>
-                <tr><td>Model</td><td class="num">${index.model ?? 'n/a'}</td></tr>
-                <tr><td>Indexed pages</td><td class="num">${index.indexedPages}</td></tr>
-                <tr><td>Chunks</td><td class="num">${index.indexedChunks}</td></tr>
-                <tr><td>Chunks stored</td><td class="num">${index.storedChunks ?? 'n/a'}</td></tr>
-                <tr><td>Pages not yet indexed</td><td class="num">${index.drift}</td></tr>
-                <tr>
-                  <td>Last indexed</td>
-                  <td class="num age">${relativeAge(index.lastIndexedAt)}</td>
-                </tr>
-                ${
-                  index.lastSyncError
-                    ? html`<tr><td>Last error</td><td class="num">${index.lastSyncError}</td></tr>`
-                    : null
-                }
-              </tbody>
-            </table>
-          </div>
+          <table class="kv">
+            <tbody>
+              <tr>
+                <td>Status</td>
+                <td class="v">
+                  <span class="status ${indexTone}"
+                    >${index.reachable ? 'reachable' : 'unreachable'}</span>
+                </td>
+              </tr>
+              <tr><td>Model</td><td class="v">${index.model ?? 'n/a'}</td></tr>
+              <tr><td>Indexed pages</td><td class="v">${index.indexedPages}</td></tr>
+              <tr><td>Chunks</td><td class="v">${index.indexedChunks}</td></tr>
+              <tr><td>Chunks stored</td><td class="v">${index.storedChunks ?? 'n/a'}</td></tr>
+              <tr><td>Pages not yet indexed</td><td class="v">${index.drift}</td></tr>
+              <tr><td>Last indexed</td><td class="v age">${relativeAge(index.lastIndexedAt)}</td></tr>
+              ${
+                index.lastSyncError
+                  ? html`<tr><td>Last error</td><td class="v">${index.lastSyncError}</td></tr>`
+                  : null
+              }
+            </tbody>
+          </table>
         </section>
 
         ${
