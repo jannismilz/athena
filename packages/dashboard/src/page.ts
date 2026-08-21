@@ -229,17 +229,19 @@ export function renderDashboard(data: DashboardData): string {
           ${queryTable(activity.topQueries, 'No searches recorded yet.')}
         </section>
 
-        <section class="card">
-          <h2>Going stale</h2>
-          <p class="note">Longest without an edit. Old is not always wrong, but it is worth a look.</p>
-          ${pageTable(content.stale)}
-        </section>
+        <div class="pair">
+          <section class="card">
+            <h2>Going stale</h2>
+            <p class="note">Longest without an edit. Old is not always wrong, but it is worth a look.</p>
+            ${pageTable(content.stale)}
+          </section>
 
-        <section class="card">
-          <h2>Largest pages</h2>
-          <p class="note">Candidates for splitting into their own topics.</p>
-          ${pageTable(content.largest, 'Words')}
-        </section>
+          <section class="card">
+            <h2>Largest pages</h2>
+            <p class="note">Candidates for splitting into their own topics.</p>
+            ${pageTable(content.largest, 'Words')}
+          </section>
+        </div>
 
         <section class="card wide">
           <h2>Index health</h2>
